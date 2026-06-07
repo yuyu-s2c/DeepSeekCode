@@ -310,14 +310,8 @@ export default function App({ verbose, initialMessage }: AppProps) {
           <Box flexDirection="column">
             {inputLines.map((line: string, i: number) => (
               <Box key={i}>
-                <Text color="cyan">
-                  {i === 0 ? "> " : "| "}
-                </Text>
-                <Text>
-                  {line.slice(0, cursorCol)}
-                  <Text inverse> </Text>
-                  {line.slice(cursorCol)}
-                </Text>
+                <Text color="cyan">{i === 0 ? "> " : "| "}</Text>
+                <Text>{line}</Text>
               </Box>
             ))}
           </Box>
