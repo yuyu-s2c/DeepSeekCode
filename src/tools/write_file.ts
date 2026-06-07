@@ -1,6 +1,7 @@
 import { writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RegisteredTool } from "./registry.js";
+import { resolveSafePath } from "./path-utils.js";
 
 export const writeFileTool: RegisteredTool = {
   definition: {
@@ -11,7 +12,7 @@ export const writeFileTool: RegisteredTool = {
       parameters: {
         type: "object",
         properties: {
-          filePath: { type: "string", description: "文件的绝对路径" },
+          filePath: { type: "string", description: "文件的相对或绝对路径" },
           content: { type: "string", description: "要写入的文件内容" },
         },
         required: ["filePath", "content"],
@@ -23,16 +24,25 @@ export const writeFileTool: RegisteredTool = {
     const filePath = args.filePath as string;
     const content = args.content as string;
 
-    const dir = dirname(filePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    const pathResult = resolveSafePath(filePath);
+    if (!pathResult.safe) {
+      return `错误：${pathResult.error}`;
     }
 
-    const exists = existsSync(filePath);
-    writeFileSync(filePath, content, "utf-8");
+    try {
+      const dir = dirname(pathResult.resolved);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
 
-    return exists
-      ? `文件已覆盖: ${filePath}`
-      : `文件已创建: ${filePath}`;
+      const exists = existsSync(pathResult.resolved);
+      writeFileSync(pathResult.resolved, content, "utf-8");
+
+      return exists
+        ? `文件已覆盖: ${pathResult.resolved}`
+        : `文件已创建: ${pathResult.resolved}`;
+    } catch (error) {
+      return `错误：写入文件失败 — ${error instanceof Error ? error.message : String(error)}`;
+    }
   },
 };

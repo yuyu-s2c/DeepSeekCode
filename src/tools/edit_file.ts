@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import type { RegisteredTool } from "./registry.js";
+import { resolveSafePath } from "./path-utils.js";
 
 export const editFileTool: RegisteredTool = {
   definition: {
@@ -11,7 +12,7 @@ export const editFileTool: RegisteredTool = {
       parameters: {
         type: "object",
         properties: {
-          filePath: { type: "string", description: "文件的绝对路径" },
+          filePath: { type: "string", description: "文件的相对或绝对路径" },
           oldString: { type: "string", description: "要被替换的原始字符串" },
           newString: { type: "string", description: "替换后的新字符串" },
         },
@@ -25,11 +26,16 @@ export const editFileTool: RegisteredTool = {
     const oldString = args.oldString as string;
     const newString = args.newString as string;
 
-    if (!existsSync(filePath)) {
-      return `错误：文件不存在 — ${filePath}`;
+    const pathResult = resolveSafePath(filePath);
+    if (!pathResult.safe) {
+      return `错误：${pathResult.error}`;
     }
 
-    const original = readFileSync(filePath, "utf-8");
+    if (!existsSync(pathResult.resolved)) {
+      return `错误：文件不存在 — ${pathResult.resolved}`;
+    }
+
+    const original = readFileSync(pathResult.resolved, "utf-8");
     const count = original.split(oldString).length - 1;
 
     if (count === 0) {
@@ -42,7 +48,7 @@ export const editFileTool: RegisteredTool = {
     const backup = original;
     try {
       const modified = original.replace(oldString, newString);
-      writeFileSync(filePath, modified, "utf-8");
+      writeFileSync(pathResult.resolved, modified, "utf-8");
 
       const oldLines = oldString.split("\n");
       const newLines = newString.split("\n");
@@ -61,9 +67,9 @@ export const editFileTool: RegisteredTool = {
         }
       }
 
-      return `编辑成功: ${filePath}\n\`\`\`diff\n${diffLines.join("\n")}\n\`\`\``;
+      return `编辑成功: ${pathResult.resolved}\n\`\`\`diff\n${diffLines.join("\n")}\n\`\`\``;
     } catch (error) {
-      writeFileSync(filePath, backup, "utf-8");
+      writeFileSync(pathResult.resolved, backup, "utf-8");
       return `错误：编辑失败，已回滚 — ${error instanceof Error ? error.message : String(error)}`;
     }
   },

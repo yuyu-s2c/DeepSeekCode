@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import type { RegisteredTool } from "./registry.js";
+import { resolveSafePath } from "./path-utils.js";
 
 export const readFileTool: RegisteredTool = {
   definition: {
@@ -10,7 +11,7 @@ export const readFileTool: RegisteredTool = {
       parameters: {
         type: "object",
         properties: {
-          filePath: { type: "string", description: "文件的绝对路径" },
+          filePath: { type: "string", description: "文件的相对或绝对路径" },
           offset: { type: "integer", description: "起始行号（1-based），默认1" },
           limit: { type: "integer", description: "读取行数，默认2000" },
         },
@@ -24,13 +25,18 @@ export const readFileTool: RegisteredTool = {
     const offset = (args.offset as number) || 1;
     const limit = (args.limit as number) || 2000;
 
-    if (!existsSync(filePath)) {
-      return `错误：文件不存在 — ${filePath}`;
+    const pathResult = resolveSafePath(filePath);
+    if (!pathResult.safe) {
+      return `错误：${pathResult.error}`;
     }
 
-    const content = readFileSync(filePath, "utf-8");
+    if (!existsSync(pathResult.resolved)) {
+      return `错误：文件不存在 — ${pathResult.resolved}`;
+    }
+
+    const content = readFileSync(pathResult.resolved, "utf-8");
     const lines = content.split("\n");
-    const start = offset - 1;
+    const start = Math.max(offset - 1, 0);
     const end = Math.min(start + limit, lines.length);
     const selected = lines.slice(start, end);
 
@@ -38,7 +44,7 @@ export const readFileTool: RegisteredTool = {
       .map((line, i) => `${start + i + 1}: ${line}`)
       .join("\n");
 
-    const header = `文件: ${filePath} (行 ${start + 1}-${end}，共 ${lines.length} 行)\n`;
+    const header = `文件: ${pathResult.resolved} (行 ${start + 1}-${end}，共 ${lines.length} 行)\n`;
     return header + result;
   },
 };

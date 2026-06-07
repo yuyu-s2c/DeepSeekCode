@@ -3,6 +3,19 @@ import type { RegisteredTool } from "./registry.js";
 
 let approvalCallback: ((command: string) => Promise<boolean>) | null = null;
 
+const DANGEROUS_PATTERNS = [
+  /rm\s+-rf\s+\//i,
+  /del\s+\/f\s+\/s\s+[A-Z]:\\/i,
+  /format\s+[A-Z]:/i,
+  />\s*\/dev\/sd[a-z]/i,
+  /mkfs/i,
+  /dd\s+if=/i,
+];
+
+function isDangerous(command: string): boolean {
+  return DANGEROUS_PATTERNS.some((p) => p.test(command));
+}
+
 export function setApprovalCallback(cb: (command: string) => Promise<boolean>): void {
   approvalCallback = cb;
 }
@@ -36,11 +49,17 @@ export const runShellTool: RegisteredTool = {
     const workdir = (args.workdir as string) || process.cwd();
     const timeout = (args.timeout as number) || 120000;
 
-    if (approvalCallback) {
-      const approved = await approvalCallback(command);
-      if (!approved) {
-        return "用户取消了命令执行";
-      }
+    if (isDangerous(command)) {
+      return `错误：拒绝执行危险命令 — ${command}`;
+    }
+
+    if (!approvalCallback) {
+      return "错误：Shell 执行未配置审批回调，命令被拒绝";
+    }
+
+    const approved = await approvalCallback(command);
+    if (!approved) {
+      return "用户取消了命令执行";
     }
 
     try {
