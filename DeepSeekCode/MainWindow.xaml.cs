@@ -378,6 +378,7 @@ public partial class MainWindow : Window
             _thinkContent = null;
             _thinkHeader = null;
             _thinkCollapsed = false;
+            _lastThinkChunk = DateTime.MinValue;
 
             // 上下文裁剪
             var messages = await _conversation.GetProcessedMessagesAsync();
@@ -455,6 +456,8 @@ public partial class MainWindow : Window
                     _thinkContent.Visibility = Visibility.Collapsed;
                 if (_thinkHeader != null)
                     _thinkHeader.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
+                // 让折叠立即生效，不被后续操作覆盖
+                ChatViewer.UpdateLayout();
             }
 
             _eventBus.Publish(new StreamCompletedEvent
@@ -1093,6 +1096,7 @@ public partial class MainWindow : Window
     private TextBlock? _thinkContent;
     private TextBlock? _thinkHeader;
     private bool _thinkCollapsed;
+    private DateTime _lastThinkChunk = DateTime.MinValue;
 
     private void UpdateThinkingPanel()
     {
@@ -1154,6 +1158,7 @@ public partial class MainWindow : Window
         // 更新内容
         _thinkContent!.Text = _thinkingBuffer;
         _thinkHeader!.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
+        _lastThinkChunk = DateTime.Now;  // 记录最后思考到达时间
 
         ScrollChatToEnd();
     }
@@ -1620,10 +1625,20 @@ public partial class MainWindow : Window
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 思考中 — 流式活跃时显示动画
+        // 思考中 — 流式活跃时显示动画，1 秒无新思考自动折叠
         if (_thinkHeader != null && !_thinkCollapsed)
         {
-            _thinkHeader.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
+            if ((DateTime.Now - _lastThinkChunk).TotalSeconds > 1)
+            {
+                _thinkCollapsed = true;
+                if (_thinkContent != null)
+                    _thinkContent.Visibility = Visibility.Collapsed;
+                _thinkHeader.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
+            }
+            else
+            {
+                _thinkHeader.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
+            }
         }
 
         // 工具卡片 — spinner 动画 + 实时耗时
