@@ -1620,11 +1620,18 @@ public partial class MainWindow : Window
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 更新运行中的工具卡片耗时
+        // 思考中 — 标题前加 spinner 动画
+        if (_thinkingHeaderBlock != null && !_thinkingCollapsed && _isStreaming)
+        {
+            _thinkingHeaderBlock.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
+        }
+
+        // 工具卡片 — spinner 动画 + 实时耗时
         foreach (var (_, card) in _activeToolCards)
         {
             var elapsed = _timingService.GetElapsed(card.ToolCallId);
             card.TimeLabel.Text = $"⏱ 运行中 · {TimingService.FormatElapsed(elapsed)}";
+            card.StatusLabel.Text = SpinnerFrames[_spinnerIndex];
         }
 
         // 子代理面板 spinner 联动刷新
