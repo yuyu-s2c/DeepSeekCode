@@ -187,12 +187,13 @@ export default function App({ verbose, initialMessage }: AppProps) {
     const line = inputLines[inputLines.length - 1] ?? "";
 
     if (key.return) {
-      if (inputLines.length === 1 && line.trim() === "") return;
-      if (line.trim() === "") {
-        submitInput();
-      } else {
+      if (key.shift) {
+        // Shift+Enter: 换行
         setInputLines((prev: string[]) => [...prev, ""]);
         setCursorCol(0);
+      } else if (inputLines.length > 1 || line.trim() !== "") {
+        // Enter: 提交（空行单行不提交，避免误触）
+        submitInput();
       }
       return;
     }
@@ -304,7 +305,7 @@ export default function App({ verbose, initialMessage }: AppProps) {
       </Box>
 
       {/* 输入区 */}
-      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} minHeight={4}>
         {status === "ready" && (
           <Box flexDirection="column">
             {inputLines.map((line: string, i: number) => (
@@ -312,7 +313,11 @@ export default function App({ verbose, initialMessage }: AppProps) {
                 <Text color="cyan">
                   {i === 0 ? "> " : "| "}
                 </Text>
-                <Text>{line}</Text>
+                <Text>
+                  {line.slice(0, cursorCol)}
+                  <Text inverse> </Text>
+                  {line.slice(cursorCol)}
+                </Text>
               </Box>
             ))}
           </Box>
