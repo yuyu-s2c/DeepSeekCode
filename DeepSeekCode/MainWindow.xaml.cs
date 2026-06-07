@@ -43,7 +43,6 @@ public partial class MainWindow : Window
     private bool _isStreaming;
     private string _thinkingBuffer = "";
     private Paragraph? _currentAiParagraph;
-    private string? _rightClickedMessage;
 
     // 输入历史
     private readonly List<string> _inputHistory = new();
@@ -81,12 +80,8 @@ public partial class MainWindow : Window
         ChatViewer.Document = new FlowDocument
         {
             FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = 14
-        };
-        ThinkingViewer.Document = new FlowDocument
-        {
-            FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = 12
+            FontSize = 14,
+            Foreground = (Brush)Application.Current.Resources["PrimaryDarkBrush"]
         };
 
         SubscribeToEvents();
@@ -190,8 +185,8 @@ public partial class MainWindow : Window
         doc.Blocks.Clear();
         doc.Blocks.Add(new Paragraph(new Run("DeepSeek Code 已就绪。输入 /help 获取帮助。"))
         {
-            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
-            FontSize = 12
+            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
+            FontSize = 11
         });
     }
 
@@ -306,7 +301,6 @@ public partial class MainWindow : Window
         StartStatusSpinner("AI 正在思考…");
         StopButton.Visibility = Visibility.Visible;
         _thinkingBuffer = "";
-        ((FlowDocument)ThinkingViewer.Document).Blocks.Clear();
 
         // 1. 先尝试 Slash 命令
         if (text.StartsWith('/'))
@@ -644,30 +638,48 @@ public partial class MainWindow : Window
     //  UI 渲染方法
     // ═══════════════════════════════════════════
 
+    /// <summary>
+    /// 用户消息 — 终端风格：▸ 标记 + 纯文本左对齐，保留右键菜单
+    /// </summary>
     private void AppendUserMessage(string content)
     {
-        var textBlock = new TextBlock
-        {
-            Text = content,
-            Foreground = Brushes.White,
-            TextWrapping = TextWrapping.Wrap
-        };
-        var border = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(40, 80, 120)),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 6, 12, 6),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 12, 0, 4),
-            MaxWidth = 700,
-            Child = textBlock,
-            Tag = content
-        };
-        border.MouseRightButtonDown += UserMessage_RightClick;
-        border.ContextMenu = BuildUserMessageContextMenu(content);
-
         var doc = (FlowDocument)ChatViewer.Document;
-        doc.Blocks.Add(new BlockUIContainer(border));
+
+        // 用户标记行
+        doc.Blocks.Add(new Paragraph(new Run("▸ 你")
+        {
+            Foreground = (Brush)Application.Current.Resources["PrimaryBlueBrush"],
+            FontWeight = FontWeights.SemiBold
+        })
+        {
+            FontSize = 11,
+            Margin = new Thickness(0, 10, 0, 2)
+        });
+
+        // 用户内容 — 可右键复制/重发
+        var contentPara = new Paragraph(new Run(content)
+        {
+            Foreground = (Brush)Application.Current.Resources["PrimaryDarkBrush"]
+        })
+        {
+            FontSize = 13,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+
+        // 右键菜单（重新发送）
+        var resendMenu = new ContextMenu();
+        var resendItem = new MenuItem { Header = "重新发送" };
+        resendItem.Click += (_, _) =>
+        {
+            InputBox.Text = content;
+            InputBox.CaretIndex = content.Length;
+            InputBox.Focus();
+        };
+        resendMenu.Items.Add(resendItem);
+        contentPara.ContextMenu = resendMenu;
+
+        doc.Blocks.Add(contentPara);
+
         _currentAiParagraph = null;
         ScrollChatToEnd();
     }
@@ -714,6 +726,18 @@ public partial class MainWindow : Window
 
         var markdown = textBuilder.ToString();
         var doc = (FlowDocument)ChatViewer.Document;
+
+        // AI 标记行
+        doc.Blocks.Add(new Paragraph(new Run("DeepSeek")
+        {
+            Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
+            FontWeight = FontWeights.SemiBold
+        })
+        {
+            FontSize = 11,
+            Margin = new Thickness(0, 10, 0, 2)
+        });
+
         doc.Blocks.Remove(_currentAiParagraph);
         _currentAiParagraph = null;
 
@@ -754,14 +778,17 @@ public partial class MainWindow : Window
         ScrollChatToEnd();
     }
 
+    /// <summary>
+    /// 系统消息 — 最淡的颜色，最小字号
+    /// </summary>
     private void AppendSystemMessage(string content)
     {
         ((FlowDocument)ChatViewer.Document).Blocks.Add(
             new Paragraph(new Run(content))
             {
-                Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
-                FontSize = 12,
-                Margin = new Thickness(0, 4, 0, 4)
+                Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
+                FontSize = 10,
+                Margin = new Thickness(0, 3, 0, 3)
             });
         ScrollChatToEnd();
     }
@@ -1028,19 +1055,51 @@ public partial class MainWindow : Window
         _subagentNeedsRebuild = false;
     }
 
+    private Paragraph? _thinkingParagraph;
+
     private void UpdateThinkingPanel()
     {
-        var doc = (FlowDocument)ThinkingViewer.Document;
-        doc.Blocks.Clear();
-        doc.Blocks.Add(new Paragraph(new Run(_thinkingBuffer))
-        {
-            FontSize = 12,
-            Foreground = new SolidColorBrush(Color.FromRgb(180, 160, 120))
-        });
-        ScrollThinkingToEnd();
+        var doc = (FlowDocument)ChatViewer.Document;
 
-        if (!string.IsNullOrWhiteSpace(_thinkingBuffer))
-            ThinkingExpander.IsExpanded = true;
+        if (string.IsNullOrWhiteSpace(_thinkingBuffer))
+        {
+            // 清空上次的思考段落
+            if (_thinkingParagraph != null)
+            {
+                doc.Blocks.Remove(_thinkingParagraph);
+                _thinkingParagraph = null;
+            }
+            return;
+        }
+
+        // 首次有思考内容时创建段落
+        if (_thinkingParagraph == null)
+        {
+            _thinkingParagraph = new Paragraph
+            {
+                Margin = new Thickness(0, 6, 0, 4),
+                Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
+                Padding = new Thickness(10, 6, 10, 6)
+            };
+            doc.Blocks.Add(_thinkingParagraph);
+        }
+
+        // 每次更新重新渲染
+        _thinkingParagraph.Inlines.Clear();
+        _thinkingParagraph.Inlines.Add(new Run("思考过程")
+        {
+            Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold
+        });
+        _thinkingParagraph.Inlines.Add(new LineBreak());
+        _thinkingParagraph.Inlines.Add(new Run(_thinkingBuffer)
+        {
+            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
+            FontSize = 10
+        });
+
+        ScrollChatToEnd();
     }
 
     // ═══════════════════════════════════════════
@@ -1056,9 +1115,7 @@ public partial class MainWindow : Window
 
     private void ScrollThinkingToEnd()
     {
-        var doc = (FlowDocument)ThinkingViewer.Document;
-        if (doc.Blocks.LastBlock != null)
-            doc.Blocks.LastBlock.BringIntoView();
+        // Thinking 内容现在内联在 ChatViewer 中，跟随主滚动
     }
 
     private void SetInputEnabled(bool enabled)
@@ -1071,52 +1128,12 @@ public partial class MainWindow : Window
     //  右键菜单
     // ═══════════════════════════════════════════
 
-    private ContextMenu BuildUserMessageContextMenu(string content)
-    {
-        var menu = new ContextMenu();
-
-        var copyItem = new MenuItem
-        {
-            Header = "复制消息"
-        };
-        copyItem.Click += (_, _) => Clipboard.SetText(content);
-        menu.Items.Add(copyItem);
-
-        var resendItem = new MenuItem
-        {
-            Header = "重新发送"
-        };
-        resendItem.Click += (_, _) =>
-        {
-            InputBox.Text = content;
-            InputBox.CaretIndex = content.Length;
-            InputBox.Focus();
-        };
-        menu.Items.Add(resendItem);
-
-        return menu;
-    }
-
-    private void UserMessage_RightClick(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is Border border && border.Tag is string text)
-        {
-            _rightClickedMessage = text;
-        }
-    }
-
     private void CopySelection_Click(object sender, RoutedEventArgs e)
     {
         var selection = ChatViewer.Selection;
         if (selection != null && !selection.IsEmpty)
         {
             Clipboard.SetText(selection.Text);
-            return;
-        }
-
-        if (_rightClickedMessage != null)
-        {
-            Clipboard.SetText(_rightClickedMessage);
         }
     }
 
