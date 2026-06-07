@@ -29,10 +29,8 @@ interface AppProps {
 export default function App({ verbose, initialMessage }: AppProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [thinking, setThinking] = useState("");
-  const [inputLine, setInputLine] = useState("");
   const [status, setStatus] = useState<"ready" | "thinking">("ready");
   const [statusText, setStatusText] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
   const { stdout } = useStdout();
   const rows = stdout?.rows ?? 24;
 
@@ -133,7 +131,6 @@ export default function App({ verbose, initialMessage }: AppProps) {
       return;
     }
 
-    setHistory((prev: string[]) => [...prev, text]);
     sendMessage(text);
   }, [renderPrompt]);
 
@@ -145,7 +142,6 @@ export default function App({ verbose, initialMessage }: AppProps) {
     if (!client || !registry || !context) return;
 
     setMessages((prev: ChatMessage[]) => [...prev, { role: "user", content: text }]);
-    setInputLine("");
     setStatus("thinking");
     setThinking("");
 
@@ -243,6 +239,19 @@ export default function App({ verbose, initialMessage }: AppProps) {
         <Text color="gray">dcode | {statusText}</Text>
         {status === "thinking" && <Text color="yellow"> ⏳</Text>}
       </Box>
+
+      {/* 输入区边框——readline prompt 在此下方 */}
+      {status === "ready" && (
+        <Box borderStyle="single" borderColor="gray" paddingX={1} minHeight={1}>
+          <Text color="cyan">{"> "}</Text>
+          <Text dimColor>在此输入，Enter 发送，Shift+Enter 换行</Text>
+        </Box>
+      )}
+      {status === "thinking" && (
+        <Box borderStyle="single" borderColor="yellow" paddingX={1} minHeight={1}>
+          <Text dimColor>⏳ 思考中...</Text>
+        </Box>
+      )}
     </Box>
   );
 }
