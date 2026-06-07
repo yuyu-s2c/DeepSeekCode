@@ -513,7 +513,6 @@ public partial class MainWindow : Window
 
         var args = TryParseArguments(tc.Function.Arguments);
 
-        // 写文件前捕获原内容（用于 diff 对比）
         string? oldFileContent = null;
         if (tc.Function.Name == "write_file")
         {
@@ -536,7 +535,9 @@ public partial class MainWindow : Window
         });
 
         var pipeline = BuildPipeline(tc.Function.Name, args);
-        var result = await Task.Run(async () => await pipeline.ExecuteAsync(context));
+
+        // 工具执行跑在线程池，不阻塞 UI
+        var result = await Task.Run(() => pipeline.ExecuteAsync(context));
 
         _eventBus.Publish(new ToolCallResultEvent
         {
@@ -548,17 +549,15 @@ public partial class MainWindow : Window
         _conversation.AddToolResult(tc.Id, tc.Function.Name, result);
         var elapsed = _timingService.StopTool(tc.Id);
         var success = context.Error == null && !context.Cancelled;
-        var capturedOldContent = oldFileContent;
-        var resultText = result;
 
         Dispatcher.Invoke(() =>
         {
-            UpdateToolCardComplete(tc.Id, success, elapsed, resultText);
+            UpdateToolCardComplete(tc.Id, success, elapsed, result);
 
             if (tc.Function.Name == "edit_file")
                 AppendDiffToCard(tc.Id, args, null, false);
             else if (tc.Function.Name == "write_file")
-                AppendDiffToCard(tc.Id, args, capturedOldContent, true);
+                AppendDiffToCard(tc.Id, args, oldFileContent, true);
 
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
         });
@@ -586,7 +585,9 @@ public partial class MainWindow : Window
         });
 
         var pipeline = BuildPipeline(tc.Function.Name, args);
-        var result = await Task.Run(async () => await pipeline.ExecuteAsync(context));
+
+        // 子代理执行跑在线程池
+        var result = await Task.Run(() => pipeline.ExecuteAsync(context));
 
         _eventBus.Publish(new ToolCallResultEvent
         {
@@ -1137,9 +1138,14 @@ public partial class MainWindow : Window
         }
 
         // 更新内容
-        _thinkingHeaderBlock!.Text = _thinkingCollapsed
-            ? $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）"
-            : "▼ 思考过程";
+        if (_thinkingCollapsed)
+        {
+            _thinkingHeaderBlock!.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
+        }
+        else
+        {
+            _thinkingHeaderBlock!.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
+        }
         _thinkingContentBlock!.Text = _thinkingBuffer;
         _thinkingContentBlock.Visibility = _thinkingCollapsed ? Visibility.Collapsed : Visibility.Visible;
 
@@ -1587,11 +1593,11 @@ public partial class MainWindow : Window
     private void EnsureSpinnerTimer()
     {
         if (_spinnerTimer != null) return;
-        _spinnerTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(120)
-        };
-        _spinnerTimer.Tick += SpinnerTimer_Tick;
+        _spinnerTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(120),
+            DispatcherPriority.Normal,
+            (_, _) => SpinnerTimer_Tick(null, EventArgs.Empty),
+            Dispatcher.CurrentDispatcher);
     }
 
     private void StartStatusSpinner(string text)
