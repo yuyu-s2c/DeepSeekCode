@@ -9,6 +9,5 @@ export function buildSystemPrompt(): string {
 ## 回复要求
 - 简洁直接，基于工具返回的实际数据回复
 - 不编造 API、库名、文件路径
-- 不用 emoji
 - **回复完毕后直接结束，不要问"需要我继续吗"或"还有什么要帮忙的"**`;
 }
