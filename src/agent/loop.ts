@@ -3,16 +3,15 @@ import type {
   ConversationMessage,
   AgentInput,
   AgentResult,
-  ToolCall,
 } from "./types.js";
 import { buildSystemPrompt } from "./system-prompt.js";
-import type { ToolDefinition } from "./types.js";
+import { ToolRegistry } from "../tools/index.js";
 
 export interface LoopConfig {
   client: DeepSeekClient;
   softLimit: number;
   hardLimit: number;
-  toolDefinitions: ToolDefinition[];
+  toolRegistry: ToolRegistry;
   onRoundExceeded?: (round: number) => Promise<boolean>;
 }
 
@@ -48,7 +47,7 @@ export async function runAgentLoop(
     let response;
     try {
       response = await config.client.chat(messages, {
-        tools: config.toolDefinitions,
+        tools: config.toolRegistry.getDefinitions(),
       });
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
@@ -73,7 +72,7 @@ export async function runAgentLoop(
     }
 
     for (const tc of response.message.tool_calls) {
-      const result = await executeToolCall(tc);
+      const result = await config.toolRegistry.execute(tc);
       messages.push({
         role: "tool",
         tool_call_id: tc.id,
@@ -104,7 +103,3 @@ export async function runAgentLoop(
   };
 }
 
-// 占位——Task 4 会让工具注册中心替换
-async function executeToolCall(tc: ToolCall): Promise<string> {
-  return `工具 ${tc.function.name} 尚未注册，参数: ${tc.function.arguments}`;
-}
