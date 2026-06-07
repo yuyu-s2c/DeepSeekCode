@@ -16,16 +16,28 @@ import {
 } from "../tools/index.js";
 import {
   setVerbose,
-  renderReasoning,
-  renderContent,
-  renderToolCall,
-  renderToolResult,
-  renderThinkingStart,
-  renderThinkingEnd,
-  renderSeparator,
+  startTurn,
+  appendReasoning,
+  appendContent,
+  appendToolCall,
+  flushTurn,
+  renderReasoningChunk,
+  renderContentChunk,
+  renderToolCallInline,
   renderWelcome,
   renderHelp,
 } from "./output.js";
+
+// ---- 多行粘贴模式 ----
+let pasteLines: string[] = [];
+let pasteMode = false;
+
+function isPasteDelimiter(line: string): boolean {
+  const t = line.trim();
+  return t === '"""' || t === "'''" || t === "```";
+}
+
+// ---- REPL ----
 
 export async function startRepl(verbose = false): Promise<void> {
   const config = loadConfig();
@@ -51,12 +63,12 @@ export async function startRepl(verbose = false): Promise<void> {
 
   setApprovalCallback(async (command: string) => {
     return new Promise((resolve) => {
-      console.log(chalk.yellow(`\n⚠ 即将执行命令: ${command}`));
+      console.log(chalk.yellow(`\n⚠ 即将执行: ${command}`));
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
       });
-      rl.question(chalk.gray("确认执行？[y/N] "), (answer) => {
+      rl.question(chalk.gray("确认？[y/N] "), (answer) => {
         rl.close();
         resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
       });
@@ -72,51 +84,87 @@ export async function startRepl(verbose = false): Promise<void> {
     output: process.stdout,
     prompt: chalk.cyan("> "),
     terminal: true,
+    historySize: 200,
   });
 
-  const processInput = async (input: string) => {
-    const trimmed = input.trim();
+  const processInput = async (rawLine: string) => {
+    // 多行粘贴模式
+    if (pasteMode) {
+      if (isPasteDelimiter(rawLine)) {
+        pasteMode = false;
+        const message = pasteLines.join("\n");
+        pasteLines = [];
+        rl.setPrompt(chalk.cyan("> "));
+        await processMessage(message);
+        rl.prompt();
+        return;
+      }
+      pasteLines.push(rawLine);
+      return;
+    }
+
+    if (isPasteDelimiter(rawLine)) {
+      pasteMode = true;
+      pasteLines = [];
+      rl.setPrompt(chalk.gray("┊ "));
+      return;
+    }
+
+    const trimmed = rawLine.trim();
     if (!trimmed) return;
 
+    // 内置命令
     if (trimmed.startsWith("/")) {
       switch (trimmed) {
         case "/help":
           renderHelp();
           return;
         case "/quit":
-          console.log(chalk.gray("再见！"));
+          console.log(chalk.gray("再见 👋"));
           process.exit(0);
         case "/clear":
           contextManager.reset();
-          console.log(chalk.gray("对话历史已清除"));
+          console.log(chalk.gray("对话已清除"));
           return;
         case "/verbose":
           showReasoning = !showReasoning;
           setVerbose(showReasoning);
-          console.log(chalk.gray(`思维链显示: ${showReasoning ? "开启" : "关闭"}`));
+          console.log(chalk.gray(`思维链: ${showReasoning ? "显示" : "隐藏"}`));
           return;
         default:
-          console.log(chalk.gray(`未知命令: ${trimmed}，输入 /help 查看帮助`));
+          console.log(chalk.gray(`未知: ${trimmed}，/help 查看帮助`));
           return;
       }
     }
 
-    renderThinkingStart();
+    await processMessage(trimmed);
+  };
 
+  const processMessage = async (message: string) => {
+    startTurn();
     const initialMessages = contextManager.getMessages();
 
     try {
       const result = await runAgentLoop(
-        { userMessage: trimmed },
+        { userMessage: message },
         {
           client,
           softLimit: config.softLimit,
           hardLimit: config.hardLimit,
           toolRegistry: registry,
           initialMessages,
-          onReasoningChunk: (text) => renderReasoning(text),
-          onContentChunk: (text) => { if (showReasoning) renderContent(text); },
-          onToolCall: (name, args) => renderToolCall(name, args),
+          onReasoningChunk: (text) => {
+            appendReasoning(text);
+            renderReasoningChunk(text);
+          },
+          onContentChunk: (text) => {
+            appendContent(text);
+            if (showReasoning) renderContentChunk(text);
+          },
+          onToolCall: (name, args) => {
+            appendToolCall(name, args);
+            renderToolCallInline(name, args);
+          },
           onRoundExceeded: async (round) => {
             return new Promise((resolve) => {
               const askRl = readline.createInterface({
@@ -135,14 +183,9 @@ export async function startRepl(verbose = false): Promise<void> {
         }
       );
 
-      renderThinkingEnd();
-      renderSeparator();
-      if (!showReasoning) {
-        console.log(result.content);
-      }
-      console.log();
+      flushTurn();
 
-      contextManager.addMessage({ role: "user", content: trimmed });
+      contextManager.addMessage({ role: "user", content: message });
       contextManager.addMessage({
         role: "assistant",
         content: result.content,
@@ -153,34 +196,46 @@ export async function startRepl(verbose = false): Promise<void> {
       if (showReasoning) {
         console.log(
           chalk.gray(
-            `[${result.totalRounds} 轮 | 输入 ${result.usage.promptTokens} tokens | 输出 ${result.usage.completionTokens} tokens]`
+            `[${result.totalRounds}轮 | ${result.usage.promptTokens}↑ ${result.usage.completionTokens}↓]`
           )
         );
       }
+      console.log();
     } catch (error) {
-      renderThinkingEnd();
+      flushTurn();
       console.error(
         chalk.red(
           `错误: ${error instanceof Error ? error.message : String(error)}`
         )
       );
+      console.log();
     }
   };
 
   rl.on("line", async (line) => {
     rl.pause();
     await processInput(line);
-    rl.prompt();
+    if (!pasteMode) rl.prompt();
     rl.resume();
   });
 
   rl.on("SIGINT", () => {
-    console.log(chalk.gray("\n使用 Ctrl+D 或 /quit 退出"));
-    rl.prompt();
+    if (pasteMode) {
+      pasteMode = false;
+      pasteLines = [];
+      rl.setPrompt(chalk.cyan("> "));
+      console.log(chalk.gray("\n粘贴已取消"));
+      rl.prompt();
+    } else {
+      console.log(chalk.gray("\nCtrl+D 或 /quit 退出"));
+      rl.prompt();
+    }
   });
 
   rl.prompt();
 }
+
+// ---- 单次执行 ----
 
 export async function runSingleMessage(message: string, verbose = false): Promise<void> {
   const config = loadConfig();
@@ -202,10 +257,11 @@ export async function runSingleMessage(message: string, verbose = false): Promis
   });
 
   setApprovalCallback(async () => true);
-
   setVerbose(verbose);
 
   console.log(chalk.gray(`dcode > ${message}\n`));
+
+  startTurn();
 
   const result = await runAgentLoop(
     { userMessage: message },
@@ -214,15 +270,21 @@ export async function runSingleMessage(message: string, verbose = false): Promis
       softLimit: config.softLimit,
       hardLimit: config.hardLimit,
       toolRegistry: registry,
-      onReasoningChunk: (text) => renderReasoning(text),
-      onContentChunk: (text) => { if (verbose) renderContent(text); },
-      onToolCall: (name, args) => renderToolCall(name, args),
+      onReasoningChunk: (text) => {
+        appendReasoning(text);
+        renderReasoningChunk(text);
+      },
+      onContentChunk: (text) => {
+        appendContent(text);
+        if (verbose) renderContentChunk(text);
+      },
+      onToolCall: (name, args) => {
+        appendToolCall(name, args);
+        renderToolCallInline(name, args);
+      },
     }
   );
 
-  if (!verbose) {
-    console.log(result.content);
-  } else {
-    console.log();  // 流式输出后补换行
-  }
+  flushTurn();
+  console.log();
 }
