@@ -350,10 +350,8 @@ public class GrepTool : ITool
                         }
                     }
                 }
-                catch
-                {
-                    // 跳过无法读取的文件
-                }
+                catch (IOException) { /* 跳过无法读取的文件 */ }
+                catch (UnauthorizedAccessException) { /* 跳过无权限的文件 */ }
             }
 
             if (foundCount == 0)
