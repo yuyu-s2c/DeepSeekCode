@@ -25,9 +25,6 @@ interface DeepSeekDelta {
   tool_calls?: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall[];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DeepSeekStream = any;
-
 export class DeepSeekClient {
   private client: OpenAI;
   private config: ClientConfig;
@@ -47,30 +44,37 @@ export class DeepSeekClient {
     return withRetry(async () => {
       const openaiMessages = toOpenAiMessages(messages);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const params: any = {
+      const stream = await this.client.chat.completions.create({
         model: this.config.model,
-        messages: openaiMessages,
-        tools: options.tools?.length ? options.tools : undefined,
+        messages: openaiMessages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+        tools: options.tools?.length
+          ? options.tools as OpenAI.Chat.Completions.ChatCompletionTool[]
+          : undefined,
         stream: true,
         max_tokens: this.config.maxTokens,
         reasoning_effort: "high",
         extra_body: { thinking: { type: "enabled" } },
         stream_options: { include_usage: true },
-      };
-
-      const stream = (await this.client.chat.completions.create(
-        params
-      )) as DeepSeekStream;
+      } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming);
 
       let reasoningContent = "";
       let content = "";
       const toolCallMap = new Map<number, ToolCall>();
+      let lastUsage: OpenAI.CompletionUsage | undefined;
+      let lastFinishReason = "stop";
 
       for await (const chunk of stream) {
         if (options.signal?.aborted) {
           stream.controller.abort();
           throw new Error("用户中断");
+        }
+
+        // 最后一帧包含 usage（stream_options: include_usage）
+        if (chunk.usage) {
+          lastUsage = chunk.usage;
+        }
+        if (chunk.choices?.[0]?.finish_reason) {
+          lastFinishReason = chunk.choices[0].finish_reason;
         }
 
         const delta = chunk.choices?.[0]?.delta as DeepSeekDelta | undefined;
@@ -113,10 +117,7 @@ export class DeepSeekClient {
         }
       }
 
-      const streamCompletion = await stream.finalChatCompletion();
-      const usage = streamCompletion.usage;
-
-      const finishReason = (streamCompletion.choices[0]?.finish_reason || "stop") as ChatResponse["finishReason"];
+      const finishReason = lastFinishReason as ChatResponse["finishReason"];
 
       const message: AssistantMessage = {
         role: "assistant",
@@ -128,10 +129,10 @@ export class DeepSeekClient {
       return {
         message,
         usage: {
-          promptTokens: usage?.prompt_tokens ?? 0,
-          completionTokens: usage?.completion_tokens ?? 0,
-          cacheHitTokens: (usage as Record<string, unknown>)?.prompt_cache_hit_tokens as number ?? 0,
-          cacheMissTokens: (usage as Record<string, unknown>)?.prompt_cache_miss_tokens as number ?? 0,
+          promptTokens: lastUsage?.prompt_tokens ?? 0,
+          completionTokens: lastUsage?.completion_tokens ?? 0,
+          cacheHitTokens: (lastUsage as unknown as Record<string, unknown>)?.prompt_cache_hit_tokens as number ?? 0,
+          cacheMissTokens: (lastUsage as unknown as Record<string, unknown>)?.prompt_cache_miss_tokens as number ?? 0,
         },
         finishReason,
       };
