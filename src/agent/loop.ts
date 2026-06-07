@@ -12,11 +12,15 @@ export interface LoopConfig {
   softLimit: number;
   hardLimit: number;
   toolRegistry: ToolRegistry;
+  mode?: "auto" | "plan";
   initialMessages?: ConversationMessage[];
   onRoundExceeded?: (round: number) => Promise<boolean>;
   onReasoningChunk?: (text: string) => void;
   onContentChunk?: (text: string) => void;
   onToolCall?: (name: string, args: string) => void;
+  onToolResult?: (name: string, result: string) => void;
+  onRoundUsage?: (usage: { promptTokens: number; completionTokens: number }) => void;
+  signal?: AbortSignal;
 }
 
 
@@ -24,11 +28,18 @@ export async function runAgentLoop(
   input: AgentInput,
   config: LoopConfig
 ): Promise<AgentResult> {
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(config.mode ?? "auto");
 
   let messages: ConversationMessage[];
   if (config.initialMessages?.length) {
-    messages = [...config.initialMessages];
+    // 替换已有的 system 消息（如果存在），否则在最前面插入
+    const sysIdx = config.initialMessages.findIndex((m) => m.role === "system");
+    if (sysIdx >= 0) {
+      messages = [...config.initialMessages];
+      messages[sysIdx] = { role: "system", content: systemPrompt };
+    } else {
+      messages = [{ role: "system", content: systemPrompt }, ...config.initialMessages];
+    }
   } else {
     messages = [{ role: "system", content: systemPrompt }];
   }
@@ -55,6 +66,7 @@ export async function runAgentLoop(
     let response;
     try {
       response = await config.client.chat(messages, {
+        signal: config.signal,
         tools: config.toolRegistry.getDefinitions(),
         reasoningEffort: hasUsedTools ? "max" : "high",
         onReasoningChunk: config.onReasoningChunk,
@@ -68,6 +80,10 @@ export async function runAgentLoop(
 
     totalUsage.promptTokens += response.usage.promptTokens;
     totalUsage.completionTokens += response.usage.completionTokens;
+    config.onRoundUsage?.({
+      promptTokens: totalUsage.promptTokens,
+      completionTokens: totalUsage.completionTokens,
+    });
 
     messages.push(response.message);
 
@@ -89,6 +105,7 @@ export async function runAgentLoop(
 
     for (const tc of response.message.tool_calls) {
       const result = await config.toolRegistry.execute(tc);
+      config.onToolResult?.(tc.function.name, result);
       messages.push({
         role: "tool",
         tool_call_id: tc.id,
@@ -106,7 +123,7 @@ export async function runAgentLoop(
   }
 
   if (lastError) {
-    lastContent = `错误：${lastError}`;
+    lastContent = lastError === "用户中断" ? "已中止。" : `错误：${lastError}`;
   } else if (round >= config.hardLimit) {
     lastContent = `已达到最大轮次 ${config.hardLimit}，任务未完成。`;
   }

@@ -114,18 +114,22 @@ stream_options: { include_usage: true }
 
 ## 已知限制
 
-1. **Ink `useInput` 不支持 Windows 中文 IME** → 改用 `readline` 处理输入
-2. **思考模式不支持 `tool_choice: "required"`** → 靠系统提示词引导
-3. **strict 模式所有参数必须 required** → 用 `0`/`""` 作哨兵值表示"用默认值"
-4. **`finalChatCompletion()` 在某些 openai SDK 版本不可用** → 从流式 chunk 取 `usage`
+1. **思考模式不支持 `tool_choice: "required"`** → 靠系统提示词引导
+2. **strict 模式所有参数必须 required** → 用 `0`/`""` 作哨兵值表示"用默认值"
+3. **`finalChatCompletion()` 在某些 openai SDK 版本不可用** → 从流式 chunk 取 `usage`
 
 ## TUI 开发注意事项
 
-- 输入层使用 Node.js 原生 `readline` (`terminal: true`)
-- 渲染层使用 Ink (React)
-- 不要使用 `useInput` hook（IME 不兼容）
-- 状态通过 React `useState` 管理，`setState` 触发 Ink 重渲染
-- `readline` 的 prompt 出现在 Ink 渲染区域下方
+- **绝对禁止：修改代码时破坏已有功能。** 每次改动必须维护上下文，确认不影响其他模块。改输入不要弄坏渲染，修错误不要绕掉正常逻辑。同一个问题反复出 bug 须复盘根因，禁止打补丁式修复。
+- 输入层使用 `readline.emitKeypressEvents` + raw mode 自定义键盘处理（替代 readline prompt），通过 Ink `keypress` 事件逐字符捕获输入并渲染在 Ink 组件内
+- 渲染层使用 Ink (React)，外层 `borderStyle="round"` 圆角边框
+- 底部栏（输入行、模式行、ctx 行）通过 `flexShrink={0}` 固定，内容区通过 `flexGrow={1}` 填充剩余空间
+- 内容区按行渲染，取最新 N 行显示，`overflowY="hidden"` 裁剪溢出
+- 思考状态在内容区与分隔线之间固定显示，不随内容滚动
+- 使用 `readline` 的 `keypress` 事件处理输入（`key.name` / `key.ctrl` 判断按键），比原始 `data` 事件更可靠
+- 中文 IME 通过 `readline.emitKeypressEvents` 的终端模式管理正常支持
+- 粘贴通过 bracketed paste 序列（`\x1b[200~` / `\x1b[201~`）检测，`emitKeypressEvents` 内部处理
+- 多行输入用 `Ctrl+J` 插入换行
 
 ## 测试
 
