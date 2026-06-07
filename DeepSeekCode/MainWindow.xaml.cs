@@ -312,9 +312,9 @@ public partial class MainWindow : Window
         StartStatusSpinner("AI 正在思考…");
         StopButton.Visibility = Visibility.Visible;
         _thinkingBuffer = "";
-        _thinkingContainer = null;
-        _thinkingContentBlock = null;
-        _thinkingHeaderBlock = null;
+        _thinkCard = null;
+        _thinkContent = null;
+        _thinkHeader = null;
 
         // 1. 先尝试 Slash 命令
         if (text.StartsWith('/'))
@@ -372,6 +372,13 @@ public partial class MainWindow : Window
 
         while (true)
         {
+            // 每次 AI 迭代独立一张思考卡片
+            _thinkingBuffer = "";
+            _thinkCard = null;
+            _thinkContent = null;
+            _thinkHeader = null;
+            _thinkCollapsed = false;
+
             // 上下文裁剪
             var messages = await _conversation.GetProcessedMessagesAsync();
 
@@ -439,7 +446,17 @@ public partial class MainWindow : Window
             }
 
             FlushCurrentAiParagraph();
-            _thinkingStreamingPaused = true;  // 流式暂停，暂不折叠
+
+            // 本次迭代思考流式完成 → 折叠卡片
+            if (_thinkCard != null && !_thinkCollapsed)
+            {
+                _thinkCollapsed = true;
+                if (_thinkContent != null)
+                    _thinkContent.Visibility = Visibility.Collapsed;
+                if (_thinkHeader != null)
+                    _thinkHeader.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
+            }
+
             _eventBus.Publish(new StreamCompletedEvent
             {
                 FullResponse = contentBuffer.ToString(),
@@ -504,7 +521,6 @@ public partial class MainWindow : Window
                 _conversation.AddAssistantMessage(contentBuffer.ToString(), _thinkingBuffer);
             break;
         }
-        CollapseThinking();
     }
 
     /// <summary>
@@ -1072,32 +1088,21 @@ public partial class MainWindow : Window
         _subagentNeedsRebuild = false;
     }
 
-    /// <summary>思考内容卡片（BlockUIContainer → Border → StackPanel）</summary>
-    private BlockUIContainer? _thinkingContainer;
-    private TextBlock? _thinkingContentBlock;
-    private TextBlock? _thinkingHeaderBlock;
-    private bool _thinkingCollapsed;
-    private bool _thinkingStreamingPaused;
+    /// <summary>当前流式迭代的思考卡片（每次迭代创建独立卡片）</summary>
+    private BlockUIContainer? _thinkCard;
+    private TextBlock? _thinkContent;
+    private TextBlock? _thinkHeader;
+    private bool _thinkCollapsed;
 
     private void UpdateThinkingPanel()
     {
         var doc = (FlowDocument)ChatViewer.Document;
 
         if (string.IsNullOrWhiteSpace(_thinkingBuffer))
-        {
-            if (_thinkingContainer != null)
-            {
-                doc.Blocks.Remove(_thinkingContainer);
-                _thinkingContainer = null;
-                _thinkingContentBlock = null;
-                _thinkingHeaderBlock = null;
-                _thinkingCollapsed = false;
-            }
             return;
-        }
 
-        // 首次创建折叠卡片
-        if (_thinkingContainer == null)
+        // 本迭代首次有思考内容 → 创建卡片
+        if (_thinkCard == null)
         {
             var border = new Border
             {
@@ -1111,69 +1116,46 @@ public partial class MainWindow : Window
 
             var stack = new StackPanel();
 
-            // 可点击标题
-            _thinkingHeaderBlock = new TextBlock
+            _thinkHeader = new TextBlock
             {
                 FontSize = 10,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
                 Cursor = Cursors.Hand
             };
-            _thinkingHeaderBlock.MouseLeftButtonDown += (_, _) =>
+            _thinkHeader.MouseLeftButtonDown += (_, _) =>
             {
-                _thinkingCollapsed = !_thinkingCollapsed;
-                if (_thinkingContentBlock != null)
-                    _thinkingContentBlock.Visibility = _thinkingCollapsed
+                _thinkCollapsed = !_thinkCollapsed;
+                if (_thinkContent != null)
+                    _thinkContent.Visibility = _thinkCollapsed
                         ? Visibility.Collapsed
                         : Visibility.Visible;
-                _thinkingHeaderBlock!.Text = _thinkingCollapsed
+                _thinkHeader!.Text = _thinkCollapsed
                     ? $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）"
-                    : "▼ 思考过程";
+                    : $"{SpinnerFrames[_spinnerIndex]} 思考过程";
             };
-            stack.Children.Add(_thinkingHeaderBlock);
+            stack.Children.Add(_thinkHeader);
 
-            // 思考内容
-            _thinkingContentBlock = new TextBlock
+            _thinkContent = new TextBlock
             {
                 FontSize = 10,
                 Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 4, 0, 0)
             };
-            stack.Children.Add(_thinkingContentBlock);
+            stack.Children.Add(_thinkContent);
 
             border.Child = stack;
-            _thinkingContainer = new BlockUIContainer(border);
-            doc.Blocks.Add(_thinkingContainer);
-            _thinkingCollapsed = false;
+            _thinkCard = new BlockUIContainer(border);
+            doc.Blocks.Add(_thinkCard);
+            _thinkCollapsed = false;
         }
 
         // 更新内容
-        _thinkingStreamingPaused = false;  // 有新思考内容，恢复动画
-        if (_thinkingCollapsed)
-        {
-            _thinkingHeaderBlock!.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
-        }
-        else
-        {
-            _thinkingHeaderBlock!.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
-        }
-        _thinkingContentBlock!.Text = _thinkingBuffer;
-        _thinkingContentBlock.Visibility = _thinkingCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        _thinkContent!.Text = _thinkingBuffer;
+        _thinkHeader!.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
 
         ScrollChatToEnd();
-    }
-
-    /// <summary>在所有 thinking 内容接收完毕后，自动折叠</summary>
-    private void CollapseThinking()
-    {
-        if (_thinkingContainer == null || _thinkingCollapsed) return;
-
-        _thinkingCollapsed = true;
-        if (_thinkingContentBlock != null)
-            _thinkingContentBlock.Visibility = Visibility.Collapsed;
-        if (_thinkingHeaderBlock != null)
-            _thinkingHeaderBlock.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
     }
 
     // ═══════════════════════════════════════════
@@ -1638,14 +1620,10 @@ public partial class MainWindow : Window
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 思考中 — 仅在流式活跃时显示动画，暂停时不显示
-        if (_thinkingHeaderBlock != null && !_thinkingCollapsed && !_thinkingStreamingPaused)
+        // 思考中 — 流式活跃时显示动画
+        if (_thinkHeader != null && !_thinkCollapsed)
         {
-            _thinkingHeaderBlock.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
-        }
-        else if (_thinkingHeaderBlock != null && !_thinkingCollapsed && _thinkingStreamingPaused)
-        {
-            _thinkingHeaderBlock.Text = "▼ 思考过程";
+            _thinkHeader.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
         }
 
         // 工具卡片 — spinner 动画 + 实时耗时
