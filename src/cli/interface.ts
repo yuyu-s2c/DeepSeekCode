@@ -28,16 +28,10 @@ import {
   renderHelp,
 } from "./output.js";
 
-// ---- 多行粘贴模式 ----
-let pasteLines: string[] = [];
-let pasteMode = false;
-
-function isPasteDelimiter(line: string): boolean {
-  const t = line.trim();
-  return t === '"""' || t === "'''" || t === "```";
-}
-
-// ---- REPL ----
+// ---- 多行粘贴自动合并 ----
+const PASTE_TIMEOUT = 80;
+let lineBuffer: string[] = [];
+let mergeTimer: ReturnType<typeof setTimeout> | null = null;
 
 export async function startRepl(verbose = false): Promise<void> {
   const config = loadConfig();
@@ -88,33 +82,16 @@ export async function startRepl(verbose = false): Promise<void> {
   });
 
   const processInput = async (rawLine: string) => {
-    // 多行粘贴模式
-    if (pasteMode) {
-      if (isPasteDelimiter(rawLine)) {
-        pasteMode = false;
-        const message = pasteLines.join("\n");
-        pasteLines = [];
-        rl.setPrompt(chalk.cyan("> "));
-        await processMessage(message);
-        rl.prompt();
-        return;
-      }
-      pasteLines.push(rawLine);
-      return;
-    }
-
-    if (isPasteDelimiter(rawLine)) {
-      pasteMode = true;
-      pasteLines = [];
-      rl.setPrompt(chalk.gray("┊ "));
-      return;
-    }
-
     const trimmed = rawLine.trim();
     if (!trimmed) return;
 
-    // 内置命令
+    // 内置命令（即使多行也立即响应）
     if (trimmed.startsWith("/")) {
+      if (mergeTimer) {
+        clearTimeout(mergeTimer);
+        lineBuffer = [];
+        mergeTimer = null;
+      }
       switch (trimmed) {
         case "/help":
           renderHelp();
@@ -213,23 +190,43 @@ export async function startRepl(verbose = false): Promise<void> {
   };
 
   rl.on("line", async (line) => {
-    rl.pause();
-    await processInput(line);
-    if (!pasteMode) rl.prompt();
-    rl.resume();
+    // 自动合并多行粘贴：短时间连续到达的行合并为一条消息
+    lineBuffer.push(line);
+    if (mergeTimer) clearTimeout(mergeTimer);
+
+    const trimmed = line.trim();
+    // 命令立即处理，不等待合并
+    if (trimmed.startsWith("/")) {
+      clearTimeout(mergeTimer!);
+      const msg = lineBuffer.join("\n");
+      lineBuffer = [];
+      mergeTimer = null;
+      await processInput(msg);
+      rl.prompt();
+      return;
+    }
+
+    mergeTimer = setTimeout(async () => {
+      const msg = lineBuffer.join("\n");
+      lineBuffer = [];
+      mergeTimer = null;
+      rl.pause();
+      await processInput(msg);
+      rl.prompt();
+      rl.resume();
+    }, PASTE_TIMEOUT);
   });
 
   rl.on("SIGINT", () => {
-    if (pasteMode) {
-      pasteMode = false;
-      pasteLines = [];
-      rl.setPrompt(chalk.cyan("> "));
-      console.log(chalk.gray("\n粘贴已取消"));
-      rl.prompt();
+    if (mergeTimer) {
+      clearTimeout(mergeTimer);
+      lineBuffer = [];
+      mergeTimer = null;
+      console.log(chalk.gray("\n已取消"));
     } else {
       console.log(chalk.gray("\nCtrl+D 或 /quit 退出"));
-      rl.prompt();
     }
+    rl.prompt();
   });
 
   rl.prompt();
