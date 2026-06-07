@@ -439,6 +439,7 @@ public partial class MainWindow : Window
             }
 
             FlushCurrentAiParagraph();
+            _thinkingStreamingPaused = true;  // 流式暂停，暂不折叠
             _eventBus.Publish(new StreamCompletedEvent
             {
                 FullResponse = contentBuffer.ToString(),
@@ -466,9 +467,8 @@ public partial class MainWindow : Window
                     UpdateSpinnerText($"正在执行: {string.Join(", ", toolCalls.Select(t => t.Function.Name))}…");
                 });
 
-                // 强制渲染工具卡片，让 spinner 动画可见
-                ChatViewer.UpdateLayout();
-                await Task.Yield();
+                // 让 UI 渲染工具卡片后再开始执行
+                await Dispatcher.Yield();
 
                 // 拆分为 task 工具（并行）和其他工具（顺序）
                 var taskCalls = toolCalls.Where(t => t.Function.Name == "task").ToList();
@@ -515,8 +515,8 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
             UpdateSpinnerText($"⏳ {tc.Function.Name}…"));
 
-        // 确保当前卡片已渲染（包括之前更新过的卡片）
-        ChatViewer.UpdateLayout();
+        // 确保卡片已渲染后再执行
+        await Dispatcher.Yield();
 
         var args = TryParseArguments(tc.Function.Arguments);
 
@@ -569,8 +569,8 @@ public partial class MainWindow : Window
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
         });
 
-        // 强制渲染，保证下一个工具开始前卡片已可见
-        ChatViewer.UpdateLayout();
+        // 让 UI 渲染完成后再执行下一个工具
+        await Dispatcher.Yield();
     }
 
     /// <summary>
@@ -1077,6 +1077,7 @@ public partial class MainWindow : Window
     private TextBlock? _thinkingContentBlock;
     private TextBlock? _thinkingHeaderBlock;
     private bool _thinkingCollapsed;
+    private bool _thinkingStreamingPaused;
 
     private void UpdateThinkingPanel()
     {
@@ -1148,6 +1149,7 @@ public partial class MainWindow : Window
         }
 
         // 更新内容
+        _thinkingStreamingPaused = false;  // 有新思考内容，恢复动画
         if (_thinkingCollapsed)
         {
             _thinkingHeaderBlock!.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
@@ -1636,10 +1638,14 @@ public partial class MainWindow : Window
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 思考中 — 标题前加 spinner 动画
-        if (_thinkingHeaderBlock != null && !_thinkingCollapsed && _isStreaming)
+        // 思考中 — 仅在流式活跃时显示动画，暂停时不显示
+        if (_thinkingHeaderBlock != null && !_thinkingCollapsed && !_thinkingStreamingPaused)
         {
             _thinkingHeaderBlock.Text = $"{SpinnerFrames[_spinnerIndex]} 思考过程";
+        }
+        else if (_thinkingHeaderBlock != null && !_thinkingCollapsed && _thinkingStreamingPaused)
+        {
+            _thinkingHeaderBlock.Text = "▼ 思考过程";
         }
 
         // 工具卡片 — spinner 动画 + 实时耗时
