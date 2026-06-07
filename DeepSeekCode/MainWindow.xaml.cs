@@ -439,7 +439,6 @@ public partial class MainWindow : Window
             }
 
             FlushCurrentAiParagraph();
-            CollapseThinking();
             _eventBus.Publish(new StreamCompletedEvent
             {
                 FullResponse = contentBuffer.ToString(),
@@ -501,6 +500,7 @@ public partial class MainWindow : Window
                 _conversation.AddAssistantMessage(contentBuffer.ToString(), _thinkingBuffer);
             break;
         }
+        CollapseThinking();
     }
 
     /// <summary>
@@ -536,7 +536,7 @@ public partial class MainWindow : Window
         });
 
         var pipeline = BuildPipeline(tc.Function.Name, args);
-        var result = await pipeline.ExecuteAsync(context);
+        var result = await Task.Run(async () => await pipeline.ExecuteAsync(context));
 
         _eventBus.Publish(new ToolCallResultEvent
         {
@@ -586,7 +586,7 @@ public partial class MainWindow : Window
         });
 
         var pipeline = BuildPipeline(tc.Function.Name, args);
-        var result = await pipeline.ExecuteAsync(context);
+        var result = await Task.Run(async () => await pipeline.ExecuteAsync(context));
 
         _eventBus.Publish(new ToolCallResultEvent
         {
