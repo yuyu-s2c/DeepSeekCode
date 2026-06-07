@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "./defaults.js";
 
 export interface AppConfig {
+  apiKey: string;
   model: string;
   baseUrl: string;
   maxRounds: number;
@@ -16,8 +17,7 @@ export interface AppConfig {
 export function loadConfig(): AppConfig {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    console.error("错误：未设置 DEEPSEEK_API_KEY 环境变量");
-    process.exit(1);
+    throw new Error("未设置 DEEPSEEK_API_KEY 环境变量");
   }
 
   let projectConfig: Partial<AppConfig> = {};
@@ -30,5 +30,5 @@ export function loadConfig(): AppConfig {
     }
   }
 
-  return { ...DEFAULT_CONFIG, ...projectConfig };
+  return { ...DEFAULT_CONFIG, ...projectConfig, apiKey };
 }

@@ -19,9 +19,19 @@ async function main() {
   const options = program.opts();
 
   if (options.model) config.model = options.model;
-  if (options.maxRounds) config.maxRounds = parseInt(options.maxRounds);
+  if (options.maxRounds) {
+    const val = Number.parseInt(options.maxRounds, 10);
+    if (Number.isNaN(val)) {
+      throw new Error(`无效的 --max-rounds 值: ${options.maxRounds}`);
+    }
+    config.maxRounds = val;
+  }
 
   const message = program.args[0];
+
+  if (options.file) {
+    console.log(`(即将附加文件: ${options.file})`);
+  }
 
   if (message) {
     console.log(`模型: ${config.model}`);

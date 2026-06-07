@@ -2,6 +2,7 @@
   "name": "dcode-cli",
   "version": "0.1.0",
   "description": "深度适配 DeepSeek V4 Pro 的编码 CLI 助手",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "dcode": "./dist/index.js"
