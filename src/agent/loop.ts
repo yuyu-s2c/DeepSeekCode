@@ -45,6 +45,7 @@ export async function runAgentLoop(
   messages.push({ role: "user", content: input.userMessage });
 
   let round = 0;
+  let hasUsedTools = false;
   const totalUsage = { promptTokens: 0, completionTokens: 0 };
   let lastContent = "";
   let lastReasoning = "";
@@ -55,6 +56,7 @@ export async function runAgentLoop(
     try {
       response = await config.client.chat(messages, {
         tools: config.toolRegistry.getDefinitions(),
+        reasoningEffort: hasUsedTools ? "max" : "high",
         onReasoningChunk: config.onReasoningChunk,
         onContentChunk: config.onContentChunk,
         onToolCall: (tc) => config.onToolCall?.(tc.function.name, tc.function.arguments),
@@ -75,6 +77,10 @@ export async function runAgentLoop(
     }
     if (response.message.reasoning_content) {
       lastReasoning = response.message.reasoning_content;
+    }
+
+    if (response.message.tool_calls?.length) {
+      hasUsedTools = true;
     }
 
     if (!response.message.tool_calls?.length) {

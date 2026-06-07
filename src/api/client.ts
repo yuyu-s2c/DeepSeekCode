@@ -14,6 +14,7 @@ export interface ClientConfig {
 export interface ChatOptions {
   tools?: ToolDefinition[];
   signal?: AbortSignal;
+  reasoningEffort?: "high" | "max";
   onReasoningChunk?: (text: string) => void;
   onContentChunk?: (text: string) => void;
   onToolCall?: (call: ToolCall) => void;
@@ -52,7 +53,7 @@ export class DeepSeekClient {
           : undefined,
         stream: true,
         max_tokens: this.config.maxTokens,
-        reasoning_effort: "high",
+        reasoning_effort: options.reasoningEffort ?? "high",
         extra_body: { thinking: { type: "enabled" } },
         stream_options: { include_usage: true },
       } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming);
