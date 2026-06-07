@@ -1,0 +1,280 @@
+﻿<Window x:Class="DeepSeekCode.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeepSeek Code"
+        Height="800" Width="1100"
+        MinHeight="500" MinWidth="700"
+        WindowStartupLocation="CenterScreen"
+        Background="White"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Window.Resources>
+        <Style TargetType="FlowDocumentScrollViewer">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#1a2a38"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{StaticResource BorderDefaultBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ═══ 标题栏 ═══ -->
+            <Border Grid.Row="0"
+                    Background="{StaticResource SurfaceTintBrush}"
+                    BorderBrush="{StaticResource BorderLightBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="10,7">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="📁" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock Text="DeepSeek Code"
+                               Foreground="{StaticResource PrimaryBlueBrush}"
+                               FontSize="12" FontWeight="Bold"
+                               Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    <TextBlock Text=" — "
+                               Foreground="{StaticResource PrimaryLightBrush}"
+                               FontSize="12" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="WorkspaceLabel"
+                               Text="..."
+                               Foreground="{StaticResource PrimaryLightBrush}"
+                               FontSize="11"
+                               FontFamily="Cascadia Code, Consolas, monospace"
+                               VerticalAlignment="Center"
+                               Cursor="Hand"
+                               MouseLeftButtonDown="WorkspaceBar_Click"
+                               ToolTip="点击切换工作区"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Todo 面板（可折叠） ═══ -->
+            <Border x:Name="TodoPanel" Grid.Row="1"
+                    Background="{StaticResource SuccessBgBrush}"
+                    BorderBrush="{StaticResource SuccessBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Visibility="Collapsed">
+                <Expander x:Name="TodoExpander" IsExpanded="True"
+                          Foreground="{StaticResource SuccessGreenBrush}"
+                          Background="Transparent" BorderThickness="0"
+                          Padding="14,6"
+                          Expanded="TodoExpander_Expanded"
+                          Collapsed="TodoExpander_Collapsed">
+                    <StackPanel Margin="0,2,0,0">
+                        <ProgressBar x:Name="TodoProgressBar"
+                                     Height="3" Minimum="0" Maximum="100" Value="0"
+                                     Foreground="{StaticResource PrimaryBlueBrush}"
+                                     Background="#e0ecf4"
+                                     Margin="0,0,0,8"/>
+                        <ItemsControl x:Name="TodoItemsControl" Focusable="False"/>
+                    </StackPanel>
+                </Expander>
+            </Border>
+
+            <!-- ═══ 子代理面板（可折叠） ═══ -->
+            <Border x:Name="SubagentPanel" Grid.Row="1"
+                    Background="{StaticResource SurfaceCardBrush}"
+                    BorderBrush="{StaticResource BorderCardBrush}"
+                    BorderThickness="0,0,0,1"
+                    Visibility="Collapsed">
+                <Expander x:Name="SubagentExpander" IsExpanded="True"
+                          Foreground="{StaticResource RunningBlueBrush}"
+                          Background="Transparent" BorderThickness="0"
+                          Padding="14,6">
+                    <ItemsControl x:Name="SubagentItemsControl"
+                                  Margin="0,2,0,0" Focusable="False"/>
+                </Expander>
+            </Border>
+
+            <!-- ═══ 主对话区 ═══ -->
+            <FlowDocumentScrollViewer x:Name="ChatViewer" Grid.Row="2"
+                                      VerticalScrollBarVisibility="Auto">
+                <FlowDocumentScrollViewer.ContextMenu>
+                    <ContextMenu x:Name="ChatContextMenu">
+                        <MenuItem Header="复制" Click="CopySelection_Click"
+                                  InputGestureText="Ctrl+C"/>
+                    </ContextMenu>
+                </FlowDocumentScrollViewer.ContextMenu>
+            </FlowDocumentScrollViewer>
+
+            <!-- ═══ 停止按钮（浮在输入区上方） ═══ -->
+            <Border Grid.Row="3"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,4">
+                <Button x:Name="StopButton"
+                        Content="■ 停止生成"
+                        Visibility="Collapsed"
+                        Click="StopButton_Click"
+                        Height="26"
+                        Background="{StaticResource ErrorRedBrush}"
+                        Foreground="White"
+                        FontSize="11"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        Padding="16,0">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="4"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </Border>
+
+            <!-- ═══ 输入区 ═══ -->
+            <Border Grid.Row="4"
+                    Background="{StaticResource SurfaceTintBrush}"
+                    BorderBrush="{StaticResource BorderLightBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="12,10,12,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0"
+                            Content="⚙"
+                            Click="SettingsButton_Click"
+                            Width="36" Height="36"
+                            Background="Transparent"
+                            Foreground="{StaticResource PrimaryLightBrush}"
+                            FontSize="18"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            ToolTip="设置"
+                            VerticalAlignment="Bottom"
+                            Margin="0,0,6,0"/>
+
+                    <Grid Grid.Column="1">
+                        <TextBox x:Name="InputBox"
+                                 MinHeight="36" MaxHeight="180"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Background="White"
+                                 Foreground="{StaticResource PrimaryDarkBrush}"
+                                 BorderBrush="{StaticResource BorderDefaultBrush}"
+                                 BorderThickness="1"
+                                 FontSize="13"
+                                 FontFamily="Microsoft YaHei"
+                                 Padding="10,8"
+                                 PreviewKeyDown="InputBox_PreviewKeyDown"
+                                 TextChanged="InputBox_TextChanged"
+                                 CaretBrush="{StaticResource PrimaryBlueBrush}"/>
+                        <Popup x:Name="CommandPopup"
+                               Placement="Bottom"
+                               PlacementTarget="{Binding ElementName=InputBox}"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               Width="{Binding ActualWidth, ElementName=InputBox}">
+                            <Border Background="White"
+                                    BorderBrush="{StaticResource PrimaryBlueBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="4">
+                                <ListBox x:Name="CommandListBox"
+                                         Background="Transparent"
+                                         Foreground="{StaticResource PrimaryDarkBrush}"
+                                         BorderThickness="0"
+                                         MaxHeight="240"
+                                         FontSize="13"
+                                         FontFamily="Microsoft YaHei"
+                                         KeyDown="CommandListBox_KeyDown"
+                                         MouseDoubleClick="CommandListBox_MouseDoubleClick">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="10,6"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="Border"
+                                                                Background="{TemplateBinding Background}"
+                                                                CornerRadius="4">
+                                                            <ContentPresenter Margin="8,4"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="Border" Property="Background"
+                                                                        Value="{StaticResource PrimaryBlueBrush}"/>
+                                                                <Setter TargetName="Border" Property="TextElement.Foreground"
+                                                                        Value="White"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Border" Property="Background"
+                                                                        Value="{StaticResource SurfaceCardBrush}"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
+                            </Border>
+                        </Popup>
+                    </Grid>
+
+                    <Button x:Name="SendButton" Grid.Column="2"
+                            Content="发送"
+                            Click="SendButton_Click"
+                            Width="80" Height="36"
+                            Margin="8,0,0,0"
+                            Background="{StaticResource PrimaryBlueBrush}"
+                            Foreground="White"
+                            FontSize="13"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            VerticalAlignment="Bottom">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="4"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- ═══ 状态栏 ═══ -->
+            <Border Grid.Row="5"
+                    Background="{StaticResource SurfaceTintBrush}"
+                    BorderBrush="{StaticResource BorderLightBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="14,4">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="StatusIndicatorLabel"
+                               Text=""
+                               Foreground="{StaticResource PrimaryBlueBrush}"
+                               FontSize="10"
+                               Margin="0,0,14,0"/>
+                    <TextBlock x:Name="StatusModelLabel"
+                               Text="deepseek-v4-pro"
+                               Foreground="{StaticResource PrimaryBlueBrush}"
+                               FontSize="10" FontWeight="SemiBold"
+                               Margin="0,0,14,0"/>
+                    <TextBlock x:Name="StatusTokenLabel"
+                               Text="Token: 0"
+                               Foreground="{StaticResource PrimaryLightBrush}"
+                               FontSize="10"
+                               Margin="0,0,14,0"/>
+                    <TextBlock x:Name="StatusCacheLabel"
+                               Text=""
+                               Foreground="{StaticResource SuccessGreenBrush}"
+                               FontSize="10"/>
+                    <TextBlock x:Name="StatusTimingLabel"
+                               Text=""
+                               Foreground="{StaticResource PrimaryLightBrush}"
+                               FontSize="10"
+                               Margin="20,0,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
