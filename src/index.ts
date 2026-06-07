@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import chalk from "chalk";
 import { loadConfig } from "./config/loader.js";
+import { startRepl, runSingleMessage } from "./cli/interface.js";
 
 const program = new Command()
   .name("dcode")
@@ -30,19 +32,17 @@ async function main() {
   const message = program.args[0];
 
   if (options.file) {
-    console.log(`(即将附加文件: ${options.file})`);
+    console.log(chalk.gray(`(即将附加文件: ${options.file})`));
   }
 
   if (message) {
-    console.log(`模型: ${config.model}`);
-    console.log(`消息: ${message}`);
+    await runSingleMessage(message);
   } else {
-    console.log(`dcode v0.1.0 — DeepSeek V4 Pro`);
-    console.log(`输入 /help 查看帮助，/quit 退出`);
+    await startRepl();
   }
 }
 
 main().catch((err) => {
-  console.error("致命错误:", err.message);
+  console.error(chalk.red(`致命错误: ${err.message}`));
   process.exit(1);
 });
