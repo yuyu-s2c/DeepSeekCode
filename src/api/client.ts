@@ -52,8 +52,8 @@ export class DeepSeekClient {
           : undefined,
         stream: true,
         max_tokens: this.config.maxTokens,
-        // 思考模式不支持 tool_choice: "required"，先关闭
-        extra_body: { thinking: { type: "disabled" } },
+        reasoning_effort: "high",
+        extra_body: { thinking: { type: "enabled" } },
         stream_options: { include_usage: true },
       } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming);
 
