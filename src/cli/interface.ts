@@ -29,7 +29,7 @@ import {
 } from "./output.js";
 
 // ---- 多行粘贴自动合并 ----
-const PASTE_TIMEOUT = 80;
+const PASTE_TIMEOUT = 300;
 let lineBuffer: string[] = [];
 let mergeTimer: ReturnType<typeof setTimeout> | null = null;
 
