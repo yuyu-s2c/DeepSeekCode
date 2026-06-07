@@ -312,6 +312,9 @@ public partial class MainWindow : Window
         StartStatusSpinner("AI 正在思考…");
         StopButton.Visibility = Visibility.Visible;
         _thinkingBuffer = "";
+        _thinkingContainer = null;
+        _thinkingContentBlock = null;
+        _thinkingHeaderBlock = null;
 
         // 1. 先尝试 Slash 命令
         if (text.StartsWith('/'))
@@ -436,6 +439,7 @@ public partial class MainWindow : Window
             }
 
             FlushCurrentAiParagraph();
+            CollapseThinking();
             _eventBus.Publish(new StreamCompletedEvent
             {
                 FullResponse = contentBuffer.ToString(),
@@ -779,19 +783,6 @@ public partial class MainWindow : Window
         ScrollChatToEnd();
     }
 
-    private void AppendToolResultMessage(string toolName, string result)
-    {
-        var display = result.Length > 200 ? result[..200] + "\n...(已截断)" : result;
-        ((FlowDocument)ChatViewer.Document).Blocks.Add(
-            new Paragraph(new Run($"[{toolName}] {display}"))
-            {
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)),
-                FontSize = 11,
-                Margin = new Thickness(16, 2, 0, 2)
-            });
-        ScrollChatToEnd();
-    }
-
     /// <summary>
     /// 系统消息 — 最淡的颜色，最小字号
     /// </summary>
@@ -1070,7 +1061,11 @@ public partial class MainWindow : Window
         _subagentNeedsRebuild = false;
     }
 
-    private Paragraph? _thinkingParagraph;
+    /// <summary>思考内容卡片（BlockUIContainer → Border → StackPanel）</summary>
+    private BlockUIContainer? _thinkingContainer;
+    private TextBlock? _thinkingContentBlock;
+    private TextBlock? _thinkingHeaderBlock;
+    private bool _thinkingCollapsed;
 
     private void UpdateThinkingPanel()
     {
@@ -1078,43 +1073,89 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(_thinkingBuffer))
         {
-            // 清空上次的思考段落
-            if (_thinkingParagraph != null)
+            if (_thinkingContainer != null)
             {
-                doc.Blocks.Remove(_thinkingParagraph);
-                _thinkingParagraph = null;
+                doc.Blocks.Remove(_thinkingContainer);
+                _thinkingContainer = null;
+                _thinkingContentBlock = null;
+                _thinkingHeaderBlock = null;
+                _thinkingCollapsed = false;
             }
             return;
         }
 
-        // 首次有思考内容时创建段落
-        if (_thinkingParagraph == null)
+        // 首次创建折叠卡片
+        if (_thinkingContainer == null)
         {
-            _thinkingParagraph = new Paragraph
+            var border = new Border
             {
-                Margin = new Thickness(0, 6, 0, 4),
                 Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
-                Padding = new Thickness(10, 6, 10, 6)
+                BorderBrush = (Brush)Application.Current.Resources["BorderCardBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(10, 6, 10, 6),
+                Margin = new Thickness(0, 6, 0, 4)
             };
-            doc.Blocks.Add(_thinkingParagraph);
+
+            var stack = new StackPanel();
+
+            // 可点击标题
+            _thinkingHeaderBlock = new TextBlock
+            {
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
+                Cursor = Cursors.Hand
+            };
+            _thinkingHeaderBlock.MouseLeftButtonDown += (_, _) =>
+            {
+                _thinkingCollapsed = !_thinkingCollapsed;
+                if (_thinkingContentBlock != null)
+                    _thinkingContentBlock.Visibility = _thinkingCollapsed
+                        ? Visibility.Collapsed
+                        : Visibility.Visible;
+                _thinkingHeaderBlock!.Text = _thinkingCollapsed
+                    ? $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）"
+                    : "▼ 思考过程";
+            };
+            stack.Children.Add(_thinkingHeaderBlock);
+
+            // 思考内容
+            _thinkingContentBlock = new TextBlock
+            {
+                FontSize = 10,
+                Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            stack.Children.Add(_thinkingContentBlock);
+
+            border.Child = stack;
+            _thinkingContainer = new BlockUIContainer(border);
+            doc.Blocks.Add(_thinkingContainer);
+            _thinkingCollapsed = false;
         }
 
-        // 每次更新重新渲染
-        _thinkingParagraph.Inlines.Clear();
-        _thinkingParagraph.Inlines.Add(new Run("思考过程")
-        {
-            Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold
-        });
-        _thinkingParagraph.Inlines.Add(new LineBreak());
-        _thinkingParagraph.Inlines.Add(new Run(_thinkingBuffer)
-        {
-            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-            FontSize = 10
-        });
+        // 更新内容
+        _thinkingHeaderBlock!.Text = _thinkingCollapsed
+            ? $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）"
+            : "▼ 思考过程";
+        _thinkingContentBlock!.Text = _thinkingBuffer;
+        _thinkingContentBlock.Visibility = _thinkingCollapsed ? Visibility.Collapsed : Visibility.Visible;
 
         ScrollChatToEnd();
+    }
+
+    /// <summary>在所有 thinking 内容接收完毕后，自动折叠</summary>
+    private void CollapseThinking()
+    {
+        if (_thinkingContainer == null || _thinkingCollapsed) return;
+
+        _thinkingCollapsed = true;
+        if (_thinkingContentBlock != null)
+            _thinkingContentBlock.Visibility = Visibility.Collapsed;
+        if (_thinkingHeaderBlock != null)
+            _thinkingHeaderBlock.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，已折叠）";
     }
 
     // ═══════════════════════════════════════════
@@ -1407,7 +1448,9 @@ public partial class MainWindow : Window
 
         if (!string.IsNullOrEmpty(resultText))
         {
-            var display = resultText.Length > 300 ? resultText[..300] + "\n...(已截断)" : resultText;
+            var display = resultText.Length > 300
+                ? $"{resultText[..300]}\n...（共 {resultText.Split('\n').Length} 行, {resultText.Length} 字符）"
+                : resultText;
             card.ContentPanel.Children.Add(new TextBlock
             {
                 Text = display,
