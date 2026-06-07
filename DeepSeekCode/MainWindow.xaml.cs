@@ -49,6 +49,18 @@ public partial class MainWindow : Window
     private int _historyIndex = -1;
     private string _savedInput = "";
 
+    // 工具卡片渲染
+    private record ToolCardInfo(
+        string ToolCallId,
+        string ToolName,
+        Border CardBorder,
+        TextBlock StatusLabel,
+        TextBlock TimeLabel,
+        StackPanel ContentPanel
+    );
+
+    private readonly Dictionary<string, ToolCardInfo> _activeToolCards = new();
+
     // 进度指示器
     private DispatcherTimer? _spinnerTimer;
     private int _spinnerIndex;
@@ -298,6 +310,8 @@ public partial class MainWindow : Window
         InputBox.Text = "";
         SetInputEnabled(false);
         _isStreaming = true;
+        _timingService.StartRound();
+        _activeToolCards.Clear();
         StartStatusSpinner("AI 正在思考…");
         StopButton.Visibility = Visibility.Visible;
         _thinkingBuffer = "";
@@ -448,7 +462,7 @@ public partial class MainWindow : Window
                 _conversation.AddAssistantMessageWithToolCalls(toolCalls, _thinkingBuffer);
                 Dispatcher.Invoke(() =>
                 {
-                    AppendToolCallMessage(toolCalls);
+                    AppendToolCards(toolCalls);
                     UpdateSpinnerText($"正在执行: {string.Join(", ", toolCalls.Select(t => t.Function.Name))}…");
                 });
 
@@ -531,15 +545,19 @@ public partial class MainWindow : Window
         });
 
         _conversation.AddToolResult(tc.Id, tc.Function.Name, result);
+        var elapsed = _timingService.StopTool(tc.Id);
+        var success = context.Error == null && !context.Cancelled;
         var capturedOldContent = oldFileContent;
+        var resultText = result;
+
         Dispatcher.Invoke(() =>
         {
-            AppendToolResultMessage(tc.Function.Name, result);
+            UpdateToolCardComplete(tc.Id, success, elapsed, resultText);
 
             if (tc.Function.Name == "edit_file")
-                RenderEditDiff(args);
+                AppendDiffToCard(tc.Id, args, null, false);
             else if (tc.Function.Name == "write_file")
-                RenderWriteDiff(args, capturedOldContent);
+                AppendDiffToCard(tc.Id, args, capturedOldContent, true);
 
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
         });
@@ -576,9 +594,12 @@ public partial class MainWindow : Window
             Success = context.Error == null && !context.Cancelled
         });
 
+        var elapsed = _timingService.StopTool(tc.Id);
+        var success = context.Error == null && !context.Cancelled;
+
         Dispatcher.Invoke(() =>
         {
-            AppendToolResultMessage(tc.Function.Name, result);
+            UpdateToolCardComplete(tc.Id, success, elapsed, result);
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
         });
 
@@ -752,16 +773,18 @@ public partial class MainWindow : Window
         ScrollChatToEnd();
     }
 
-    private void AppendToolCallMessage(List<ToolCall> toolCalls)
+    /// <summary>
+    /// 为每个工具调用创建独立卡片（spinner 状态）
+    /// </summary>
+    private void AppendToolCards(List<ToolCall> toolCalls)
     {
-        var names = string.Join(", ", toolCalls.Select(t => t.Function.Name));
-        ((FlowDocument)ChatViewer.Document).Blocks.Add(
-            new Paragraph(new Run($"[调用工具: {names}]"))
-            {
-                Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
-                FontSize = 12,
-                Margin = new Thickness(0, 4, 0, 2)
-            });
+        foreach (var tc in toolCalls)
+        {
+            _timingService.StartTool(tc.Id);
+            var summary = GetToolParamSummary(tc.Function.Name,
+                TryParseArguments(tc.Function.Arguments));
+            CreateToolCard(tc.Id, tc.Function.Name, summary);
+        }
         ScrollChatToEnd();
     }
 
@@ -1124,6 +1147,257 @@ public partial class MainWindow : Window
         SendButton.IsEnabled = enabled;
     }
 
+    /// <summary>
+    /// 获取工具对应的图标
+    /// </summary>
+    private static string GetToolIcon(string toolName) => toolName switch
+    {
+        "read_file" => "📖",
+        "edit_file" => "✏",
+        "write_file" => "📝",
+        "glob" => "⚙",
+        "grep" => "🔍",
+        "shell" => "⚡",
+        "webfetch" => "🌐",
+        "git_diff" => "📋",
+        "git_log" => "📜",
+        "git_commit" => "✅",
+        "todo_write" => "📋",
+        "task" => "🤖",
+        "read_skill" => "📚",
+        _ => "🔧"
+    };
+
+    /// <summary>
+    /// 获取工具参数摘要（截取关键参数用于卡片头部显示）
+    /// </summary>
+    private static string GetToolParamSummary(string toolName, Dictionary<string, object?> args)
+    {
+        return toolName switch
+        {
+            "read_file" or "edit_file" or "write_file" =>
+                args.TryGetValue("filePath", out var fp) ? fp?.ToString() ?? "" : "",
+            "glob" or "grep" =>
+                args.TryGetValue("pattern", out var p) ? p?.ToString() ?? "" : "",
+            "shell" =>
+                args.TryGetValue("command", out var cmd) ? TruncateParam(cmd?.ToString(), 60) : "",
+            "webfetch" =>
+                args.TryGetValue("url", out var url) ? TruncateParam(url?.ToString(), 50) : "",
+            "git_diff" => "--staged",
+            "git_log" => "-5",
+            "git_commit" =>
+                args.TryGetValue("message", out var msg) ? TruncateParam(msg?.ToString(), 40) : "",
+            "task" =>
+                args.TryGetValue("description", out var desc) ? TruncateParam(desc?.ToString(), 40) : "",
+            "read_skill" =>
+                args.TryGetValue("name", out var sn) ? sn?.ToString() ?? "" : "",
+            _ => ""
+        };
+    }
+
+    private static string TruncateParam(string? text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLen ? text : text[..maxLen] + "...";
+    }
+
+    /// <summary>
+    /// 创建一个工具调用卡片（初始 spinner 状态），插入对话区并返回引用。
+    /// </summary>
+    private ToolCardInfo CreateToolCard(string toolCallId, string toolName, string paramSummary)
+    {
+        var doc = (FlowDocument)ChatViewer.Document;
+
+        // 状态标签
+        var statusLabel = new TextBlock
+        {
+            Text = GetToolIcon(toolName),
+            FontSize = 10,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+
+        // 耗时标签
+        var timeLabel = new TextBlock
+        {
+            FontSize = 10,
+            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
+            Text = "⏱ ..."
+        };
+
+        // 内容面板
+        var contentPanel = new StackPanel();
+
+        // 卡片边框
+        var cardBorder = new Border
+        {
+            BorderBrush = (Brush)Application.Current.Resources["RunningBorderBrush"],
+            BorderThickness = new Thickness(2, 0, 0, 0),
+            Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
+            CornerRadius = new CornerRadius(0, 4, 4, 0),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 4, 0, 4)
+        };
+
+        // 头部行
+        var headerPanel = new DockPanel { Margin = new Thickness(0, 0, 0, 0) };
+
+        var nameLabel = new TextBlock
+        {
+            Text = toolName,
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)Application.Current.Resources["RunningBlueBrush"],
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        DockPanel.SetDock(nameLabel, Dock.Left);
+
+        var rightPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        rightPanel.Children.Add(timeLabel);
+        DockPanel.SetDock(rightPanel, Dock.Right);
+
+        var paramLabel = new TextBlock
+        {
+            Text = string.IsNullOrEmpty(paramSummary) ? "" : paramSummary,
+            FontSize = 10,
+            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        headerPanel.Children.Add(statusLabel);
+        headerPanel.Children.Add(nameLabel);
+        headerPanel.Children.Add(rightPanel);
+        headerPanel.Children.Add(paramLabel);
+
+        var outerStack = new StackPanel();
+        outerStack.Children.Add(headerPanel);
+        outerStack.Children.Add(contentPanel);
+
+        cardBorder.Child = outerStack;
+
+        _currentAiParagraph = null;
+        doc.Blocks.Add(new BlockUIContainer(cardBorder));
+
+        var cardInfo = new ToolCardInfo(toolCallId, toolName, cardBorder, statusLabel, timeLabel, contentPanel);
+        _activeToolCards[toolCallId] = cardInfo;
+        return cardInfo;
+    }
+
+    /// <summary>
+    /// 将工具卡片从 spinner 状态更新为完成/失败状态
+    /// </summary>
+    private void UpdateToolCardComplete(string toolCallId, bool success, TimeSpan elapsed, string? resultText)
+    {
+        if (!_activeToolCards.TryGetValue(toolCallId, out var card))
+            return;
+
+        if (success)
+        {
+            card.StatusLabel.Text = "✔";
+            card.CardBorder.BorderBrush = (Brush)Application.Current.Resources["SuccessBorderBrush"];
+        }
+        else
+        {
+            card.StatusLabel.Text = "✕";
+            card.CardBorder.BorderBrush = (Brush)Application.Current.Resources["ErrorBorderBrush"];
+        }
+
+        var timeColor = GetTimeColor(elapsed);
+        card.TimeLabel.Text = $"⏱ {TimingService.FormatElapsed(elapsed)}";
+        card.TimeLabel.Foreground = timeColor;
+
+        if (!string.IsNullOrEmpty(resultText))
+        {
+            var display = resultText.Length > 300 ? resultText[..300] + "\n...(已截断)" : resultText;
+            card.ContentPanel.Children.Add(new TextBlock
+            {
+                Text = display,
+                FontSize = 11,
+                Foreground = (Brush)Application.Current.Resources["PrimaryMediumBrush"],
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                FontFamily = new FontFamily("Microsoft YaHei")
+            });
+        }
+
+        _activeToolCards.Remove(toolCallId);
+    }
+
+    private static Brush GetTimeColor(TimeSpan elapsed)
+    {
+        if (elapsed.TotalSeconds >= 10)
+            return (Brush)Application.Current.Resources["ErrorRedBrush"];
+        if (elapsed.TotalSeconds >= 1)
+            return (Brush)Application.Current.Resources["WarningOrangeBrush"];
+        return (Brush)Application.Current.Resources["PrimaryLightBrush"];
+    }
+
+    /// <summary>
+    /// 将 diff 结果追加到工具卡片内容区
+    /// </summary>
+    private void AppendDiffToCard(string toolCallId, Dictionary<string, object?> args,
+        string? capturedOldContent, bool isWrite)
+    {
+        var filePath = args.TryGetValue("filePath", out var fp) ? fp?.ToString() : null;
+        var oldStr = args.TryGetValue("oldString", out var os) ? os?.ToString() : null;
+        var newStr = args.TryGetValue("newString", out var ns) ? ns?.ToString() : null;
+        var newContent = args.TryGetValue("content", out var ct) ? ct?.ToString() : null;
+
+        if (string.IsNullOrEmpty(filePath)) return;
+
+        string oldText, newText;
+        if (isWrite)
+        {
+            oldText = capturedOldContent ?? "";
+            newText = newContent ?? "";
+        }
+        else
+        {
+            oldText = oldStr ?? "";
+            newText = newStr ?? "";
+        }
+
+        if (!_activeToolCards.TryGetValue(toolCallId, out var card))
+        {
+            // 卡片已被移除，回退到独立渲染
+            if (isWrite)
+                RenderWriteDiff(args, capturedOldContent);
+            else
+                RenderEditDiff(args);
+            return;
+        }
+
+        var diffSection = Diff.DiffRenderer.RenderDiff(oldText, newText, filePath);
+
+        foreach (Block block in diffSection.Blocks)
+        {
+            if (block is Paragraph para)
+            {
+                var diffText = new TextBlock
+                {
+                    FontSize = 10,
+                    FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
+                    TextWrapping = TextWrapping.NoWrap,
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Background = para.Background,
+                    Foreground = para.Foreground
+                };
+
+                foreach (Inline inline in para.Inlines)
+                {
+                    if (inline is Run run)
+                    {
+                        diffText.Inlines.Add(new Run(run.Text)
+                        {
+                            Foreground = run.Foreground,
+                            Background = run.Background
+                        });
+                    }
+                }
+                card.ContentPanel.Children.Add(diffText);
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════
     //  右键菜单
     // ═══════════════════════════════════════════
@@ -1186,6 +1460,14 @@ public partial class MainWindow : Window
     {
         _spinnerIndex = (_spinnerIndex + 1) % SpinnerFrames.Length;
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
+        StatusTimingLabel.Text = _timingService.GetRoundSummary();
+
+        // 更新运行中的工具卡片耗时
+        foreach (var (_, card) in _activeToolCards)
+        {
+            var elapsed = _timingService.GetElapsed(card.ToolCallId);
+            card.TimeLabel.Text = $"⏱ 运行中 · {TimingService.FormatElapsed(elapsed)}";
+        }
 
         // 子代理面板 spinner 联动刷新
         if (_subagentList.Any(s => !s.Completed))
@@ -1321,6 +1603,7 @@ public partial class MainWindow : Window
     {
         _isStreaming = false;
         StopStatusSpinner();
+        StatusTimingLabel.Text = _timingService.GetRoundSummary();
         SetInputEnabled(true);
         StopButton.Visibility = Visibility.Collapsed;
         _currentCancellation = null;
