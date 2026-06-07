@@ -93,10 +93,10 @@ public partial class App : Application
         // read_skill 工具（依赖 SkillEngine，注册在此处）
         toolRegistry.Register(new ReadSkillTool(skillEngine));
 
-        // 上下文策略（上下文窗口独立于 API 输出上限）
+        // 上下文策略（V4 Pro/Flash 均 1M 上下文窗口）
         var contextOptions = new ContextStrategyOptions
         {
-            MaxTokens = 96000,  // DeepSeek V4 支持 128K，留 32K 给输出 + 工具定义
+            MaxTokens = 900_000,  // 1M 窗口留 100K 给输出 + 工具定义
             TokenEstimator = async text => await deepSeekClient.EstimateTokenCount(text)
         };
         var contextOrchestrator = new ContextStrategyOrchestrator(contextOptions)
