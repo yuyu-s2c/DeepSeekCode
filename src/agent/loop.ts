@@ -14,6 +14,9 @@ export interface LoopConfig {
   toolRegistry: ToolRegistry;
   initialMessages?: ConversationMessage[];
   onRoundExceeded?: (round: number) => Promise<boolean>;
+  onReasoningChunk?: (text: string) => void;
+  onContentChunk?: (text: string) => void;
+  onToolCall?: (name: string, args: string) => void;
 }
 
 
@@ -52,6 +55,9 @@ export async function runAgentLoop(
     try {
       response = await config.client.chat(messages, {
         tools: config.toolRegistry.getDefinitions(),
+        onReasoningChunk: config.onReasoningChunk,
+        onContentChunk: config.onContentChunk,
+        onToolCall: (tc) => config.onToolCall?.(tc.function.name, tc.function.arguments),
       });
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);

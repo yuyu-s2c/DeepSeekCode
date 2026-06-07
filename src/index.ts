@@ -35,10 +35,12 @@ async function main() {
     console.log(chalk.gray(`(即将附加文件: ${options.file})`));
   }
 
+  const verbose = !!options.verbose;
+
   if (message) {
-    await runSingleMessage(message);
+    await runSingleMessage(message, verbose);
   } else {
-    await startRepl();
+    await startRepl(verbose);
   }
 }
 

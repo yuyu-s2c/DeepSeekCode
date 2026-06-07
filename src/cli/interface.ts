@@ -27,7 +27,7 @@ import {
   renderHelp,
 } from "./output.js";
 
-export async function startRepl(): Promise<void> {
+export async function startRepl(verbose = false): Promise<void> {
   const config = loadConfig();
 
   const registry = new ToolRegistry();
@@ -45,8 +45,8 @@ export async function startRepl(): Promise<void> {
     maxTokens: config.maxTokens,
   });
 
-  let verbose = false;
-  setVerbose(verbose);
+  let showReasoning = verbose;
+  setVerbose(showReasoning);
 
   setApprovalCallback(async (command: string) => {
     return new Promise((resolve) => {
@@ -90,9 +90,9 @@ export async function startRepl(): Promise<void> {
           console.log(chalk.gray("对话历史已清除"));
           return;
         case "/verbose":
-          verbose = !verbose;
-          setVerbose(verbose);
-          console.log(chalk.gray(`思维链显示: ${verbose ? "开启" : "关闭"}`));
+          showReasoning = !showReasoning;
+          setVerbose(showReasoning);
+          console.log(chalk.gray(`思维链显示: ${showReasoning ? "开启" : "关闭"}`));
           return;
         default:
           console.log(chalk.gray(`未知命令: ${trimmed}，输入 /help 查看帮助`));
@@ -113,6 +113,9 @@ export async function startRepl(): Promise<void> {
           hardLimit: config.hardLimit,
           toolRegistry: registry,
           initialMessages,
+          onReasoningChunk: (text) => renderReasoning(text),
+          onContentChunk: (text) => { if (showReasoning) renderContent(text); },
+          onToolCall: (name, args) => renderToolCall(name, args),
           onRoundExceeded: async (round) => {
             return new Promise((resolve) => {
               const askRl = readline.createInterface({
@@ -133,7 +136,9 @@ export async function startRepl(): Promise<void> {
 
       renderThinkingEnd();
       renderSeparator();
-      console.log(result.content);
+      if (!showReasoning) {
+        console.log(result.content);
+      }
       console.log();
 
       contextManager.addMessage({ role: "user", content: trimmed });
@@ -144,7 +149,7 @@ export async function startRepl(): Promise<void> {
         tool_calls: null,
       });
 
-      if (verbose) {
+      if (showReasoning) {
         console.log(
           chalk.gray(
             `[${result.totalRounds} 轮 | 输入 ${result.usage.promptTokens} tokens | 输出 ${result.usage.completionTokens} tokens]`
@@ -176,7 +181,7 @@ export async function startRepl(): Promise<void> {
   rl.prompt();
 }
 
-export async function runSingleMessage(message: string): Promise<void> {
+export async function runSingleMessage(message: string, verbose = false): Promise<void> {
   const config = loadConfig();
 
   const registry = new ToolRegistry();
@@ -196,6 +201,8 @@ export async function runSingleMessage(message: string): Promise<void> {
 
   setApprovalCallback(async () => true);
 
+  setVerbose(verbose);
+
   console.log(chalk.gray(`dcode > ${message}\n`));
 
   const result = await runAgentLoop(
@@ -205,8 +212,15 @@ export async function runSingleMessage(message: string): Promise<void> {
       softLimit: config.softLimit,
       hardLimit: config.hardLimit,
       toolRegistry: registry,
+      onReasoningChunk: (text) => renderReasoning(text),
+      onContentChunk: (text) => { if (verbose) renderContent(text); },
+      onToolCall: (name, args) => renderToolCall(name, args),
     }
   );
 
-  console.log(result.content);
+  if (!verbose) {
+    console.log(result.content);
+  } else {
+    console.log();  // 流式输出后补换行
+  }
 }
