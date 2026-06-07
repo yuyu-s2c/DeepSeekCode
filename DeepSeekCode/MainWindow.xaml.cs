@@ -466,6 +466,10 @@ public partial class MainWindow : Window
                     UpdateSpinnerText($"正在执行: {string.Join(", ", toolCalls.Select(t => t.Function.Name))}…");
                 });
 
+                // 强制渲染工具卡片，让 spinner 动画可见
+                ChatViewer.UpdateLayout();
+                await Task.Yield();
+
                 // 拆分为 task 工具（并行）和其他工具（顺序）
                 var taskCalls = toolCalls.Where(t => t.Function.Name == "task").ToList();
                 var otherCalls = toolCalls.Where(t => t.Function.Name != "task").ToList();
@@ -510,6 +514,9 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
             UpdateSpinnerText($"⏳ {tc.Function.Name}…"));
+
+        // 确保当前卡片已渲染（包括之前更新过的卡片）
+        ChatViewer.UpdateLayout();
 
         var args = TryParseArguments(tc.Function.Arguments);
 
@@ -561,6 +568,9 @@ public partial class MainWindow : Window
 
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
         });
+
+        // 强制渲染，保证下一个工具开始前卡片已可见
+        ChatViewer.UpdateLayout();
     }
 
     /// <summary>
