@@ -56,3 +56,28 @@ export interface ChatResponse {
   };
   finishReason: "stop" | "tool_calls" | "length";
 }
+
+export interface AgentContext {
+  systemPrompt: string;
+  messages: ConversationMessage[];
+  config: {
+    model: string;
+    maxRounds: number;
+    softLimit: number;
+    hardLimit: number;
+    maxTokens: number;
+  };
+  toolDefinitions: ToolDefinition[];
+}
+
+export interface AgentInput {
+  userMessage: string;
+  attachedFiles?: { path: string; content: string }[];
+}
+
+export interface AgentResult {
+  content: string;
+  reasoningContent: string | null;
+  totalRounds: number;
+  usage: { promptTokens: number; completionTokens: number };
+}
