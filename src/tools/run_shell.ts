@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { platform } from "node:os";
 import type { RegisteredTool } from "./registry.js";
 
 let approvalCallback: ((command: string) => Promise<boolean>) | null = null;
@@ -64,7 +65,13 @@ export const runShellTool: RegisteredTool = {
     }
 
     try {
-      const output = execSync(command, {
+      // Windows 中文版默认 GBK，切换到 UTF-8 避免 PowerShell 乱码
+      const isWindows = platform() === "win32";
+      const wrappedCommand = isWindows
+        ? `chcp 65001 > nul && ${command}`
+        : command;
+
+      const output = execSync(wrappedCommand, {
         cwd: workdir,
         timeout,
         encoding: "utf-8",
