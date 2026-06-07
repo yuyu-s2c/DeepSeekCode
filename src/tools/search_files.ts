@@ -8,13 +8,17 @@ export const searchFilesTool: RegisteredTool = {
     function: {
       name: "search_files",
       description: "按文件名 Glob 模式查找文件，返回匹配的文件路径列表",
+      strict: true,
       parameters: {
         type: "object",
         properties: {
           pattern: { type: "string", description: "Glob 模式，如 **/*.ts, src/**/*.tsx" },
-          path: { type: "string", description: "搜索起始目录，默认为当前目录" },
+          path: {
+            type: "string",
+            description: "搜索起始目录，传空字符串表示当前目录",
+          },
         },
-        required: ["pattern"],
+        required: ["pattern", "path"],
         additionalProperties: false,
       },
     },

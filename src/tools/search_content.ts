@@ -10,20 +10,21 @@ export const searchContentTool: RegisteredTool = {
     function: {
       name: "search_content",
       description: "在文件中搜索匹配正则表达式的内容，返回文件路径和行号",
+      strict: true,
       parameters: {
         type: "object",
         properties: {
           pattern: { type: "string", description: "正则表达式搜索模式" },
           path: {
             type: "string",
-            description: "搜索目录路径，默认为当前目录",
+            description: "搜索目录路径，传空字符串表示当前目录",
           },
           include: {
             type: "string",
-            description: "文件类型过滤，如 *.ts, *.{js,ts}",
+            description: "文件类型过滤（如 *.ts, *.{js,ts}），传空字符串或 * 表示所有文件",
           },
         },
-        required: ["pattern"],
+        required: ["pattern", "path", "include"],
         additionalProperties: false,
       },
     },

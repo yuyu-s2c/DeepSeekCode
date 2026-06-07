@@ -43,6 +43,7 @@ export async function startRepl(verbose = false): Promise<void> {
     baseUrl: config.baseUrl,
     model: config.model,
     maxTokens: config.maxTokens,
+    strict: true,
   });
 
   let showReasoning = verbose;
@@ -197,6 +198,7 @@ export async function runSingleMessage(message: string, verbose = false): Promis
     baseUrl: config.baseUrl,
     model: config.model,
     maxTokens: config.maxTokens,
+    strict: true,
   });
 
   setApprovalCallback(async () => true);

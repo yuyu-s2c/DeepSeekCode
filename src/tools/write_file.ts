@@ -9,6 +9,7 @@ export const writeFileTool: RegisteredTool = {
     function: {
       name: "write_file",
       description: "创建新文件或覆盖已有文件的内容",
+      strict: true,
       parameters: {
         type: "object",
         properties: {

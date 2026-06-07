@@ -9,6 +9,7 @@ export interface ClientConfig {
   baseUrl: string;
   model: string;
   maxTokens: number;
+  strict?: boolean;
 }
 
 export interface ChatOptions {
@@ -32,9 +33,12 @@ export class DeepSeekClient {
 
   constructor(config: ClientConfig) {
     this.config = config;
+    const baseURL = config.strict
+      ? config.baseUrl.replace(/\/$/, "") + "/beta"
+      : config.baseUrl;
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl,
+      baseURL,
     });
   }
 

@@ -8,22 +8,23 @@ export const readFileTool: RegisteredTool = {
     function: {
       name: "read_file",
       description: "读取指定文件的内容，支持指定行偏移和行数限制",
+      strict: true,
       parameters: {
         type: "object",
         properties: {
           filePath: { type: "string", description: "文件的相对或绝对路径" },
-          offset: { type: "integer", description: "起始行号（1-based），默认1" },
-          limit: { type: "integer", description: "读取行数，默认2000" },
+          offset: { type: "integer", description: "起始行号（1-based），传 0 表示默认值 1" },
+          limit: { type: "integer", description: "读取行数，传 0 表示默认值 2000" },
         },
-        required: ["filePath"],
+        required: ["filePath", "offset", "limit"],
         additionalProperties: false,
       },
     },
   },
   execute: async (args) => {
     const filePath = args.filePath as string;
-    const offset = (args.offset as number) || 1;
-    const limit = (args.limit as number) || 2000;
+    const offset = (args.offset as number) > 0 ? (args.offset as number) : 1;
+    const limit = (args.limit as number) > 0 ? (args.limit as number) : 2000;
 
     const pathResult = resolveSafePath(filePath);
     if (!pathResult.safe) {

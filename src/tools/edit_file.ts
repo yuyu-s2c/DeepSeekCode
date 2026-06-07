@@ -9,6 +9,7 @@ export const editFileTool: RegisteredTool = {
       name: "edit_file",
       description:
         "精确替换文件中的指定字符串。oldString 必须在文件中唯一匹配。",
+      strict: true,
       parameters: {
         type: "object",
         properties: {
