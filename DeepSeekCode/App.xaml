@@ -1,0 +1,87 @@
+﻿<Application x:Class="DeepSeekCode.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <!-- ═══ 主色系 ═══ -->
+        <Color x:Key="PrimaryBlue">#38a0e0</Color>
+        <Color x:Key="PrimaryDark">#1a2a38</Color>
+        <Color x:Key="PrimaryMedium">#4a6070</Color>
+        <Color x:Key="PrimaryLight">#88a8c0</Color>
+        <SolidColorBrush x:Key="PrimaryBlueBrush" Color="#38a0e0"/>
+        <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#1a2a38"/>
+        <SolidColorBrush x:Key="PrimaryMediumBrush" Color="#4a6070"/>
+        <SolidColorBrush x:Key="PrimaryLightBrush" Color="#88a8c0"/>
+
+        <!-- ═══ 表面色 ═══ -->
+        <Color x:Key="SurfaceWhite">#ffffff</Color>
+        <Color x:Key="SurfaceTint">#f2f7fb</Color>
+        <Color x:Key="SurfaceCard">#f5f8fc</Color>
+        <SolidColorBrush x:Key="SurfaceWhiteBrush" Color="#ffffff"/>
+        <SolidColorBrush x:Key="SurfaceTintBrush" Color="#f2f7fb"/>
+        <SolidColorBrush x:Key="SurfaceCardBrush" Color="#f5f8fc"/>
+
+        <!-- ═══ 语义色 ═══ -->
+        <Color x:Key="SuccessGreen">#58a058</Color>
+        <Color x:Key="SuccessBg">#f0f8f0</Color>
+        <Color x:Key="SuccessBorder">#c8e0c8</Color>
+        <SolidColorBrush x:Key="SuccessGreenBrush" Color="#58a058"/>
+        <SolidColorBrush x:Key="SuccessBgBrush" Color="#f0f8f0"/>
+        <SolidColorBrush x:Key="SuccessBorderBrush" Color="#c8e0c8"/>
+
+        <Color x:Key="ErrorRed">#c04040</Color>
+        <Color x:Key="ErrorBg">#f8e8e8</Color>
+        <Color x:Key="ErrorBorder">#e0a0a0</Color>
+        <SolidColorBrush x:Key="ErrorRedBrush" Color="#c04040"/>
+        <SolidColorBrush x:Key="ErrorBgBrush" Color="#f8e8e8"/>
+        <SolidColorBrush x:Key="ErrorBorderBrush" Color="#e0a0a0"/>
+
+        <Color x:Key="WarningOrange">#d09030</Color>
+        <Color x:Key="WarningBg">#fffdf0</Color>
+        <Color x:Key="WarningBorder">#f0e0a0</Color>
+        <SolidColorBrush x:Key="WarningOrangeBrush" Color="#d09030"/>
+        <SolidColorBrush x:Key="WarningBgBrush" Color="#fffdf0"/>
+        <SolidColorBrush x:Key="WarningBorderBrush" Color="#f0e0a0"/>
+
+        <!-- ═══ 边框/分隔 ═══ -->
+        <Color x:Key="BorderDefault">#d0e0f0</Color>
+        <Color x:Key="BorderLight">#d8e6f2</Color>
+        <Color x:Key="BorderCard">#e4eef6</Color>
+        <SolidColorBrush x:Key="BorderDefaultBrush" Color="#d0e0f0"/>
+        <SolidColorBrush x:Key="BorderLightBrush" Color="#d8e6f2"/>
+        <SolidColorBrush x:Key="BorderCardBrush" Color="#e4eef6"/>
+
+        <!-- ═══ 代码区（暗底） ═══ -->
+        <Color x:Key="CodeBg">#1a2a3a</Color>
+        <Color x:Key="CodeBorder">#2a4050</Color>
+        <Color x:Key="CodeText">#a0c0d0</Color>
+        <SolidColorBrush x:Key="CodeBgBrush" Color="#1a2a3a"/>
+        <SolidColorBrush x:Key="CodeBorderBrush" Color="#2a4050"/>
+        <SolidColorBrush x:Key="CodeTextBrush" Color="#a0c0d0"/>
+
+        <!-- ═══ AI 消息色 ═══ -->
+        <Color x:Key="AiLabel">#58a8d8</Color>
+        <SolidColorBrush x:Key="AiLabelBrush" Color="#58a8d8"/>
+
+        <!-- ═══ 运行中色 ═══ -->
+        <Color x:Key="RunningBlue">#3098d0</Color>
+        <Color x:Key="RunningBg">#e8f4fc</Color>
+        <Color x:Key="RunningBorder">#38a0e0</Color>
+        <SolidColorBrush x:Key="RunningBlueBrush" Color="#3098d0"/>
+        <SolidColorBrush x:Key="RunningBgBrush" Color="#e8f4fc"/>
+        <SolidColorBrush x:Key="RunningBorderBrush" Color="#38a0e0"/>
+
+        <!-- ═══ 排队/中性色 ═══ -->
+        <Color x:Key="QueuedGray">#90b0c8</Color>
+        <Color x:Key="QueuedBg">#f0f4f8</Color>
+        <SolidColorBrush x:Key="QueuedGrayBrush" Color="#90b0c8"/>
+        <SolidColorBrush x:Key="QueuedBgBrush" Color="#f0f4f8"/>
+
+        <!-- ═══ 全局样式 ═══ -->
+        <Style TargetType="FlowDocumentScrollViewer">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#1a2a38"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+    </Application.Resources>
+</Application>
