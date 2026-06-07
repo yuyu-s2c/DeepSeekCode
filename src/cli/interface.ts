@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { loadConfig } from "../config/loader.js";
 import { DeepSeekClient } from "../api/client.js";
 import { runAgentLoop } from "../agent/loop.js";
+import { ContextManager } from "../context/manager.js";
 import {
   ToolRegistry,
   readFileTool,
@@ -61,6 +62,8 @@ export async function startRepl(): Promise<void> {
     });
   });
 
+  const contextManager = new ContextManager();
+
   renderWelcome(config.model);
 
   const rl = readline.createInterface({
@@ -83,6 +86,7 @@ export async function startRepl(): Promise<void> {
           console.log(chalk.gray("再见！"));
           process.exit(0);
         case "/clear":
+          contextManager.reset();
           console.log(chalk.gray("对话历史已清除"));
           return;
         case "/verbose":
@@ -98,6 +102,8 @@ export async function startRepl(): Promise<void> {
 
     renderThinkingStart();
 
+    const initialMessages = contextManager.getMessages();
+
     try {
       const result = await runAgentLoop(
         { userMessage: trimmed },
@@ -106,6 +112,7 @@ export async function startRepl(): Promise<void> {
           softLimit: config.softLimit,
           hardLimit: config.hardLimit,
           toolRegistry: registry,
+          initialMessages,
           onRoundExceeded: async (round) => {
             return new Promise((resolve) => {
               const askRl = readline.createInterface({
@@ -128,6 +135,14 @@ export async function startRepl(): Promise<void> {
       renderSeparator();
       console.log(result.content);
       console.log();
+
+      contextManager.addMessage({ role: "user", content: trimmed });
+      contextManager.addMessage({
+        role: "assistant",
+        content: result.content,
+        reasoning_content: result.reasoningContent,
+        tool_calls: null,
+      });
 
       if (verbose) {
         console.log(

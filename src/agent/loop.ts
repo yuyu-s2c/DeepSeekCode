@@ -12,6 +12,7 @@ export interface LoopConfig {
   softLimit: number;
   hardLimit: number;
   toolRegistry: ToolRegistry;
+  initialMessages?: ConversationMessage[];
   onRoundExceeded?: (round: number) => Promise<boolean>;
 }
 
@@ -22,9 +23,12 @@ export async function runAgentLoop(
 ): Promise<AgentResult> {
   const systemPrompt = buildSystemPrompt();
 
-  const messages: ConversationMessage[] = [
-    { role: "system", content: systemPrompt },
-  ];
+  let messages: ConversationMessage[];
+  if (config.initialMessages?.length) {
+    messages = [...config.initialMessages];
+  } else {
+    messages = [{ role: "system", content: systemPrompt }];
+  }
 
   if (input.attachedFiles?.length) {
     for (const file of input.attachedFiles) {
