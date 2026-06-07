@@ -378,6 +378,7 @@ public partial class MainWindow : Window
             _thinkContent = null;
             _thinkHeader = null;
             _thinkCollapsed = false;
+            _thinkDone = false;
             _lastThinkChunk = DateTime.MinValue;
 
             // 上下文裁剪
@@ -449,8 +450,9 @@ public partial class MainWindow : Window
             FlushCurrentAiParagraph();
 
             // 本次迭代思考流式完成 → 折叠卡片
-            if (_thinkCard != null && !_thinkCollapsed)
+            if (_thinkCard != null && !_thinkDone)
             {
+                _thinkDone = true;
                 _thinkCollapsed = true;
                 if (_thinkContent != null)
                     _thinkContent.Visibility = Visibility.Collapsed;
@@ -1096,6 +1098,7 @@ public partial class MainWindow : Window
     private TextBlock? _thinkContent;
     private TextBlock? _thinkHeader;
     private bool _thinkCollapsed;
+    private bool _thinkDone;  // 思考完成，不再自动折叠
     private DateTime _lastThinkChunk = DateTime.MinValue;
     private DateTime _thinkStartTime;
 
@@ -1139,7 +1142,7 @@ public partial class MainWindow : Window
                 var duration = DateTime.Now - _thinkStartTime;
                 _thinkHeader!.Text = _thinkCollapsed
                     ? $"▶ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）"
-                    : $"▼ 思考过程（{_thinkingBuffer.Length} 字）";
+                    : $"▼ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）";
             };
             stack.Children.Add(_thinkHeader);
 
@@ -1156,12 +1159,11 @@ public partial class MainWindow : Window
             border.Child = stack;
             _thinkCard = new BlockUIContainer(border);
             doc.Blocks.Add(_thinkCard);
-            _thinkCollapsed = true;  // 内容默认折叠，只有标题可见
+            // 不设置 _thinkCollapsed — 由 SpinnerTimer_Tick 统一控制
         }
 
-        // 流式期间仅更新标题动画，内容写入但保持隐藏
+        // 流式期间内容写入但保持隐藏，标题由 SpinnerTimer_Tick 统一更新
         _thinkContent!.Text = _thinkingBuffer;
-        _thinkHeader!.Text = $"{SpinnerFrames[_spinnerIndex]} 思考中...";
         _lastThinkChunk = DateTime.Now;
 
         ScrollChatToEnd();
@@ -1629,18 +1631,17 @@ public partial class MainWindow : Window
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 思考中 — 仅显示标题动画，1 秒无新内容自动折叠
+        // 思考中 — 仅显示标题动画，1 秒无新内容自动折叠（仅一次）
         if (_thinkHeader != null && _thinkCard != null)
         {
-            if (_thinkCollapsed)
+            if (_thinkDone)
             {
-                // 已折叠：保持静态标题
-                var duration = DateTime.Now - _thinkStartTime;
-                _thinkHeader.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）";
+                // 已完成，保持当前状态（用户可自由展开/收起）
             }
             else if ((DateTime.Now - _lastThinkChunk).TotalSeconds > 1)
             {
-                // 超 1 秒无新思考 → 自动折叠，显示用时
+                // 超 1 秒无新思考 → 自动折叠，标记完成
+                _thinkDone = true;
                 _thinkCollapsed = true;
                 if (_thinkContent != null)
                     _thinkContent.Visibility = Visibility.Collapsed;
