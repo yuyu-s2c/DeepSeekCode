@@ -27,8 +27,10 @@ export function toOpenAiMessages(
         const result: OpenAIMessage = {
           role: "assistant",
           content: msg.content,
-          reasoning_content: msg.reasoning_content,
         };
+        if (msg.reasoning_content != null) {
+          result.reasoning_content = msg.reasoning_content;
+        }
         if (msg.tool_calls) {
           result.tool_calls = msg.tool_calls;
         }
