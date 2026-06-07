@@ -95,9 +95,7 @@ export default function App({ verbose, initialMessage }: AppProps) {
   const renderPrompt = useCallback(() => {
     const rl = rlRef.current;
     if (!rl || status === "thinking") return;
-    rl.setPrompt("");
-    // 先输出一个提示符，让用户看到输入区
-    process.stdout.write("\n");
+    rl.setPrompt("\x1b[36m> \x1b[0m");
     rl.prompt();
   }, [status]);
 
@@ -210,8 +208,7 @@ export default function App({ verbose, initialMessage }: AppProps) {
       {messages.length === 0 && (
         <Box flexDirection="column" marginBottom={1}>
           <Text bold color="cyan">  dcode</Text>
-          <Text dimColor>  DeepSeek V4 Pro 深度适配 | /help /quit /verbose</Text>
-          <Text dimColor>  Shift+Enter 换行  |  ↑↓ 历史</Text>
+          <Text dimColor>  DeepSeek V4 Pro  |  Enter 发送  |  ↑↓ 历史  |  /help</Text>
           <Text> </Text>
         </Box>
       )}
@@ -239,19 +236,6 @@ export default function App({ verbose, initialMessage }: AppProps) {
         <Text color="gray">dcode | {statusText}</Text>
         {status === "thinking" && <Text color="yellow"> ⏳</Text>}
       </Box>
-
-      {/* 输入区边框——readline prompt 在此下方 */}
-      {status === "ready" && (
-        <Box borderStyle="single" borderColor="gray" paddingX={1} minHeight={1}>
-          <Text color="cyan">{"> "}</Text>
-          <Text dimColor>在此输入，Enter 发送，Shift+Enter 换行</Text>
-        </Box>
-      )}
-      {status === "thinking" && (
-        <Box borderStyle="single" borderColor="yellow" paddingX={1} minHeight={1}>
-          <Text dimColor>⏳ 思考中...</Text>
-        </Box>
-      )}
     </Box>
   );
 }
