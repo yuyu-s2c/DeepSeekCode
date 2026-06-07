@@ -10,10 +10,8 @@ import type { ToolDefinition } from "./types.js";
 
 export interface LoopConfig {
   client: DeepSeekClient;
-  maxRounds: number;
   softLimit: number;
   hardLimit: number;
-  maxTokens: number;
   toolDefinitions: ToolDefinition[];
   onRoundExceeded?: (round: number) => Promise<boolean>;
 }
@@ -44,18 +42,31 @@ export async function runAgentLoop(
   const totalUsage = { promptTokens: 0, completionTokens: 0 };
   let lastContent = "";
   let lastReasoning = "";
+  let lastError: string | null = null;
 
   while (round < config.hardLimit) {
-    const response = await config.client.chat(messages, {
-      tools: config.toolDefinitions,
-    });
+    let response;
+    try {
+      response = await config.client.chat(messages, {
+        tools: config.toolDefinitions,
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      break;
+    }
 
     totalUsage.promptTokens += response.usage.promptTokens;
     totalUsage.completionTokens += response.usage.completionTokens;
 
     messages.push(response.message);
-    lastContent = response.message.content ?? "";
-    lastReasoning = response.message.reasoning_content ?? "";
+
+    // 只在非空时保留，避免纯工具调用轮次覆盖之前的有效输出
+    if (response.message.content) {
+      lastContent = response.message.content;
+    }
+    if (response.message.reasoning_content) {
+      lastReasoning = response.message.reasoning_content;
+    }
 
     if (!response.message.tool_calls?.length) {
       break;
@@ -72,13 +83,16 @@ export async function runAgentLoop(
 
     round++;
 
+    // 已完成 round 轮工具调用，检查是否超软上限
     if (round >= config.softLimit && config.onRoundExceeded) {
       const shouldContinue = await config.onRoundExceeded(round);
       if (!shouldContinue) break;
     }
   }
 
-  if (round >= config.hardLimit) {
+  if (lastError) {
+    lastContent = `错误：${lastError}`;
+  } else if (round >= config.hardLimit) {
     lastContent = `已达到最大轮次 ${config.hardLimit}，任务未完成。`;
   }
 
