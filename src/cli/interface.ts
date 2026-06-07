@@ -28,10 +28,17 @@ import {
   renderHelp,
 } from "./output.js";
 
-// ---- 多行粘贴自动合并 ----
-const PASTE_TIMEOUT = 300;
-let lineBuffer: string[] = [];
-let mergeTimer: ReturnType<typeof setTimeout> | null = null;
+// ---- 多行输入：Enter 换行，空行 Enter 提交 ----
+
+let inputLines: string[] = [];
+const PROMPT = chalk.cyan("> ");
+const CONT_PROMPT = chalk.gray("| ");
+
+function getPrompt(): string {
+  return inputLines.length === 0 ? PROMPT : CONT_PROMPT;
+}
+
+// ---- REPL ----
 
 export async function startRepl(verbose = false): Promise<void> {
   const config = loadConfig();
@@ -76,46 +83,10 @@ export async function startRepl(verbose = false): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.cyan("> "),
+    prompt: getPrompt(),
     terminal: true,
     historySize: 200,
   });
-
-  const processInput = async (rawLine: string) => {
-    const trimmed = rawLine.trim();
-    if (!trimmed) return;
-
-    // 内置命令（即使多行也立即响应）
-    if (trimmed.startsWith("/")) {
-      if (mergeTimer) {
-        clearTimeout(mergeTimer);
-        lineBuffer = [];
-        mergeTimer = null;
-      }
-      switch (trimmed) {
-        case "/help":
-          renderHelp();
-          return;
-        case "/quit":
-          console.log(chalk.gray("再见 👋"));
-          process.exit(0);
-        case "/clear":
-          contextManager.reset();
-          console.log(chalk.gray("对话已清除"));
-          return;
-        case "/verbose":
-          showReasoning = !showReasoning;
-          setVerbose(showReasoning);
-          console.log(chalk.gray(`思维链: ${showReasoning ? "显示" : "隐藏"}`));
-          return;
-        default:
-          console.log(chalk.gray(`未知: ${trimmed}，/help 查看帮助`));
-          return;
-      }
-    }
-
-    await processMessage(trimmed);
-  };
 
   const processMessage = async (message: string) => {
     startTurn();
@@ -189,40 +160,70 @@ export async function startRepl(verbose = false): Promise<void> {
     }
   };
 
-  rl.on("line", async (line) => {
-    // 自动合并多行粘贴：短时间连续到达的行合并为一条消息
-    lineBuffer.push(line);
-    if (mergeTimer) clearTimeout(mergeTimer);
-
+  rl.on("line", (line) => {
     const trimmed = line.trim();
-    // 命令立即处理，不等待合并
-    if (trimmed.startsWith("/")) {
-      clearTimeout(mergeTimer!);
-      const msg = lineBuffer.join("\n");
-      lineBuffer = [];
-      mergeTimer = null;
-      await processInput(msg);
+
+    // 内置命令：即时执行
+    if (inputLines.length === 0 && trimmed.startsWith("/")) {
+      switch (trimmed) {
+        case "/help":
+          renderHelp();
+          break;
+        case "/quit":
+          console.log(chalk.gray("再见 👋"));
+          process.exit(0);
+        case "/clear":
+          contextManager.reset();
+          console.log(chalk.gray("对话已清除"));
+          break;
+        case "/verbose":
+          showReasoning = !showReasoning;
+          setVerbose(showReasoning);
+          console.log(chalk.gray(`思维链: ${showReasoning ? "显示" : "隐藏"}`));
+          break;
+        default:
+          console.log(chalk.gray(`未知: ${trimmed}，/help 查看帮助`));
+      }
+      rl.setPrompt(getPrompt());
       rl.prompt();
       return;
     }
 
-    mergeTimer = setTimeout(async () => {
-      const msg = lineBuffer.join("\n");
-      lineBuffer = [];
-      mergeTimer = null;
+    // 单行模式：有内容且非空行 → 直接提交
+    if (inputLines.length === 0 && trimmed !== "") {
       rl.pause();
-      await processInput(msg);
-      rl.prompt();
-      rl.resume();
-    }, PASTE_TIMEOUT);
+      processMessage(trimmed).then(() => {
+        rl.setPrompt(getPrompt());
+        rl.prompt();
+        rl.resume();
+      });
+      return;
+    }
+
+    // 多行模式：空行 → 提交所有已缓冲的行
+    if (trimmed === "" && inputLines.length > 0) {
+      const msg = inputLines.join("\n");
+      inputLines = [];
+      rl.setPrompt(PROMPT);
+      rl.pause();
+      processMessage(msg).then(() => {
+        rl.prompt();
+        rl.resume();
+      });
+      return;
+    }
+
+    // 积累行（第一行非空，或已在多行模式中）
+    inputLines.push(trimmed);
+    rl.setPrompt(CONT_PROMPT);
+    rl.prompt();
   });
 
   rl.on("SIGINT", () => {
-    if (mergeTimer) {
-      clearTimeout(mergeTimer);
-      lineBuffer = [];
-      mergeTimer = null;
-      console.log(chalk.gray("\n已取消"));
+    if (inputLines.length > 0) {
+      console.log(chalk.gray("\n输入已取消"));
+      inputLines = [];
+      rl.setPrompt(PROMPT);
     } else {
       console.log(chalk.gray("\nCtrl+D 或 /quit 退出"));
     }

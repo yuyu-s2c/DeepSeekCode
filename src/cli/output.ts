@@ -80,7 +80,7 @@ export function renderToolCallInline(_name: string, _args: string): void {
 export function renderWelcome(model: string): void {
   console.log(chalk.bold.cyan(`  dcode`) + chalk.gray(` — DeepSeek V4 Pro`));
   console.log(chalk.gray(`  模型: ${model}  |  /help 帮助  |  /quit 退出`));
-  console.log(chalk.gray(`  ↑↓ 历史  |  Ctrl+C 中断  |  多行粘贴自动合并`));
+  console.log(chalk.gray(`  ↑↓ 历史  |  Ctrl+C 取消  |  Enter 换行，空行 Enter 提交`));
   console.log();
 }
 
@@ -93,9 +93,10 @@ ${chalk.bold("命令")}
   /verbose     切换思维链
 
 ${chalk.bold("输入")}
-  ↑↓           浏览历史
-  Ctrl+C       中断
-  多行文本      直接粘贴即可
+  Enter 换行    多行输入
+  空行 Enter    提交
+  ↑↓            浏览历史
+  Ctrl+C        取消输入
 
 ${chalk.bold("启动")}
   dcode              REPL
