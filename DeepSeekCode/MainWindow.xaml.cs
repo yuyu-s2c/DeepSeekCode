@@ -142,15 +142,12 @@ public partial class MainWindow : Window
             Dispatcher.BeginInvoke(() => OnSubagentCompleted(e)));
     }
 
-    private void OnPermissionRequested(PermissionRequestEvent e)
+    private async void OnPermissionRequested(PermissionRequestEvent e)
     {
-        Dispatcher.Invoke(() =>
-        {
-            var message = $"允许执行工具 '{e.ToolName}'?\n{e.Command}";
-            var result = MessageBox.Show(message, "权限确认",
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-            e.UserDecision = result == MessageBoxResult.Yes;
-        });
+        var toolName = e.ToolName ?? "";
+        var result = await Dispatcher.InvokeAsync(() =>
+            ShowInlinePermissionAsync(toolName, e.Command ?? toolName));
+        e.UserDecision = await result;
     }
 
     // ═══════════════════════════════════════════
@@ -621,16 +618,10 @@ public partial class MainWindow : Window
         pipeline.AddFilter(new PermissionPipelineFilter(_permissionManager,
             async name =>
             {
-                var permissionEvent = new PermissionRequestEvent
-                {
-                    ToolName = name,
-                    Command = args.TryGetValue("command", out var cmd) ? cmd?.ToString() : null,
-                    Level = _permissionManager.Check(name,
-                        args.TryGetValue("command", out var c) ? c?.ToString() : null)
-                };
-                _eventBus.Publish(permissionEvent);
-                await Task.CompletedTask;
-                return permissionEvent.UserDecision;
+                var command = args.TryGetValue("command", out var cmd) ? cmd?.ToString() : null;
+                var task = await Dispatcher.InvokeAsync(() =>
+                    ShowInlinePermissionAsync(name, command ?? name));
+                return (bool?)await task;
             }));
 
         // 日志过滤器
@@ -865,6 +856,7 @@ public partial class MainWindow : Window
         var percent = total > 0 ? (int)((double)completed / total * 100) : 0;
 
         TodoPanel.Visibility = Visibility.Visible;
+        TodoExpander.Foreground = (Brush)Application.Current.Resources["SuccessGreenBrush"];
         TodoExpander.Header = completed == total
             ? $"任务 ✓ 全部完成 ({completed}/{total})"
             : $"任务 ({completed}/{total})";
@@ -883,10 +875,10 @@ public partial class MainWindow : Window
 
             var fgColor = todo.Status switch
             {
-                TodoStatus.Completed => Color.FromRgb(100, 180, 120),
-                TodoStatus.InProgress => Color.FromRgb(86, 156, 214),
-                TodoStatus.Cancelled => Color.FromRgb(140, 140, 140),
-                _ => Color.FromRgb(200, 200, 180)
+                TodoStatus.Completed => (Brush)Application.Current.Resources["SuccessGreenBrush"],
+                TodoStatus.InProgress => (Brush)Application.Current.Resources["RunningBlueBrush"],
+                TodoStatus.Cancelled => (Brush)Application.Current.Resources["PrimaryLightBrush"],
+                _ => (Brush)Application.Current.Resources["PrimaryMediumBrush"]
             };
 
             var priorityMark = todo.Priority switch
@@ -908,7 +900,7 @@ public partial class MainWindow : Window
             var iconRun = new TextBlock
             {
                 Text = icon,
-                Foreground = new SolidColorBrush(fgColor),
+                Foreground = fgColor,
                 FontSize = 12,
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center
@@ -918,7 +910,7 @@ public partial class MainWindow : Window
             var textRun = new TextBlock
             {
                 Text = $"{todo.Content}{priorityMark}",
-                Foreground = new SolidColorBrush(fgColor),
+                Foreground = fgColor,
                 FontSize = 12,
                 TextDecorations = textDeco,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -995,7 +987,7 @@ public partial class MainWindow : Window
                 if (info.Completed) continue;
 
                 var elapsed = (DateTime.Now - info.StartTime).TotalSeconds;
-                var spinFrame = SpinnerFrames[(int)(elapsed / 0.12) % SpinnerFrames.Length];
+                var spinFrame = SpinnerFrames[_spinnerIndex % SpinnerFrames.Length];
 
                 if (SubagentItemsControl.Items[i] is StackPanel row && row.Children.Count >= 2)
                 {
@@ -1030,12 +1022,12 @@ public partial class MainWindow : Window
                 var icon = info.Summary != null && info.Summary.Contains("失败")
                     ? "✘" : "✔";
                 var fg = info.Summary != null && info.Summary.Contains("失败")
-                    ? Color.FromRgb(220, 80, 80) : Color.FromRgb(80, 200, 120);
+                    ? (Brush)Application.Current.Resources["ErrorRedBrush"] : (Brush)Application.Current.Resources["SuccessGreenBrush"];
 
                 row.Children.Add(new TextBlock
                 {
                     Text = $"{icon} [{info.Type}] {info.Description}",
-                    Foreground = new SolidColorBrush(fg),
+                    Foreground = fg,
                     FontSize = 12,
                     Margin = new Thickness(0, 0, 8, 0)
                 });
@@ -1045,7 +1037,7 @@ public partial class MainWindow : Window
                     row.Children.Add(new TextBlock
                     {
                         Text = info.Summary,
-                        Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),
+                        Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
                         FontSize = 11,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         MaxWidth = 400
@@ -1060,7 +1052,7 @@ public partial class MainWindow : Window
                 row.Children.Add(new TextBlock
                 {
                     Text = $"{spinFrame} [{info.Type}] {info.Description}",
-                    Foreground = new SolidColorBrush(Color.FromRgb(86, 156, 214)),
+                    Foreground = (Brush)Application.Current.Resources["RunningBlueBrush"],
                     FontSize = 12,
                     Margin = new Thickness(0, 0, 8, 0)
                 });
@@ -1068,7 +1060,7 @@ public partial class MainWindow : Window
                 row.Children.Add(new TextBlock
                 {
                     Text = $"{elapsed:F1}s",
-                    Foreground = new SolidColorBrush(Color.FromRgb(150, 170, 190)),
+                    Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
                     FontSize = 11
                 });
             }
@@ -1123,6 +1115,114 @@ public partial class MainWindow : Window
         });
 
         ScrollChatToEnd();
+    }
+
+    // ═══════════════════════════════════════════
+    //  权限确认 — 内联卡片
+    // ═══════════════════════════════════════════
+
+    /// <summary>
+    /// 在对话流中插入内联权限确认卡片
+    /// </summary>
+    private Task<bool> ShowInlinePermissionAsync(string toolName, string command)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+
+        Dispatcher.Invoke(() =>
+        {
+            var doc = (FlowDocument)ChatViewer.Document;
+
+            var cardBorder = new Border
+            {
+                BorderBrush = (Brush)Application.Current.Resources["WarningBorderBrush"],
+                BorderThickness = new Thickness(2, 0, 0, 0),
+                Background = (Brush)Application.Current.Resources["WarningBgBrush"],
+                CornerRadius = new CornerRadius(0, 4, 4, 0),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 6, 0, 6)
+            };
+
+            var stack = new StackPanel();
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "⚠ 权限确认",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)Application.Current.Resources["WarningOrangeBrush"],
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+
+            var displayCmd = command ?? toolName;
+            if (displayCmd.Length > 100) displayCmd = displayCmd[..100] + "...";
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"允许执行 {toolName}: {displayCmd} 吗？",
+                FontSize = 11,
+                Foreground = (Brush)Application.Current.Resources["PrimaryMediumBrush"],
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal };
+
+            var allowBtn = new Button
+            {
+                Content = "允许",
+                Width = 70, Height = 28,
+                Background = (Brush)Application.Current.Resources["PrimaryBlueBrush"],
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                FontSize = 11,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            allowBtn.Click += (_, _) =>
+            {
+                stack.Children.Clear();
+                stack.Children.Add(new TextBlock
+                {
+                    Text = $"✔ 已允许: {toolName}",
+                    FontSize = 11,
+                    Foreground = (Brush)Application.Current.Resources["SuccessGreenBrush"]
+                });
+                tcs.TrySetResult(true);
+            };
+
+            var denyBtn = new Button
+            {
+                Content = "拒绝",
+                Width = 70, Height = 28,
+                Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
+                Foreground = (Brush)Application.Current.Resources["PrimaryMediumBrush"],
+                BorderBrush = (Brush)Application.Current.Resources["BorderCardBrush"],
+                BorderThickness = new Thickness(1),
+                FontSize = 11,
+                Cursor = Cursors.Hand
+            };
+            denyBtn.Click += (_, _) =>
+            {
+                stack.Children.Clear();
+                stack.Children.Add(new TextBlock
+                {
+                    Text = $"✕ 已拒绝: {toolName}",
+                    FontSize = 11,
+                    Foreground = (Brush)Application.Current.Resources["ErrorRedBrush"]
+                });
+                tcs.TrySetResult(false);
+            };
+
+            btnPanel.Children.Add(allowBtn);
+            btnPanel.Children.Add(denyBtn);
+            stack.Children.Add(btnPanel);
+
+            cardBorder.Child = stack;
+            doc.Blocks.Add(new BlockUIContainer(cardBorder));
+            ScrollChatToEnd();
+        });
+
+        return tcs.Task;
     }
 
     // ═══════════════════════════════════════════
