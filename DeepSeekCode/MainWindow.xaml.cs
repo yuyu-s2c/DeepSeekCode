@@ -1270,11 +1270,26 @@ public partial class MainWindow : Window
     //  辅助方法
     // ═══════════════════════════════════════════
 
+    private ScrollViewer? _chatScrollViewer;
+
     private void ScrollChatToEnd()
     {
-        var doc = (FlowDocument)ChatViewer.Document;
-        if (doc.Blocks.LastBlock != null)
-            doc.Blocks.LastBlock.BringIntoView();
+        _chatScrollViewer ??= FindVisualChild<ScrollViewer>(ChatViewer);
+        _chatScrollViewer?.ScrollToEnd();
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T found)
+                return found;
+            var result = FindVisualChild<T>(child);
+            if (result != null)
+                return result;
+        }
+        return null;
     }
 
     private void ScrollThinkingToEnd()
