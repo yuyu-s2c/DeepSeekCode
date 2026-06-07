@@ -28,7 +28,7 @@ export function toOpenAiMessages(
           role: "assistant",
           content: msg.content,
         };
-        if (msg.reasoning_content != null) {
+        if (msg.reasoning_content != null && msg.tool_calls) {
           result.reasoning_content = msg.reasoning_content;
         }
         if (msg.tool_calls) {
