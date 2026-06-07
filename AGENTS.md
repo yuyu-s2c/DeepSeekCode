@@ -129,7 +129,48 @@ stream_options: { include_usage: true }
 - 使用 `readline` 的 `keypress` 事件处理输入（`key.name` / `key.ctrl` 判断按键），比原始 `data` 事件更可靠
 - 中文 IME 通过 `readline.emitKeypressEvents` 的终端模式管理正常支持
 - 粘贴通过 bracketed paste 序列（`\x1b[200~` / `\x1b[201~`）检测，`emitKeypressEvents` 内部处理
-- 多行输入用 `Ctrl+J` 插入换行
+- 多行输入用 `Ctrl+J` 插入换行。粘贴大段文本 (>5 行) 自动折叠为 `[N 行, K 字符]` 计数栏，手动输入不受影响
+- 通过按键间隔检测（< 40ms）区分粘贴/手动，`pasteNewlineRef` 跳过 Windows `\r\n` 中的 `\n` 避免重复换行
+
+## 模式切换
+
+- **Tab** 键切换 `auto` / `plan` 模式
+- Plan Mode 三层保护：
+  1. 系统提示词注入 "Plan Mode" 指令（`buildSystemPrompt(mode)` 动态生成）
+  2. `ToolRegistry.setPlanMode(true)` 黑名单过滤 `write_file`/`edit_file`/`run_shell`
+  3. `setApprovalCallback(() => mode === "auto")` 拒绝 shell 审批
+- `useCallback` deps 必须包含 `mode`，否则闭包过期导致系统提示词不更新
+
+## Agent 中止
+
+- `AbortController` 串联 `app.tsx` → `LoopConfig.signal` → `client.chat({ signal })`
+- Ctrl+C 在 `status==="thinking"` 时调用 `abortRef.current?.abort()`
+- loop 中捕获 `"用户中断"` 返回 `"已中止。"` 而非错误前缀
+
+## Token 统计
+
+- `LoopConfig.onRoundUsage` 每轮 API 返回后推送累计 `{ promptTokens, completionTokens }`
+- ctx 行实时刷新百分比，不再等整个对话结束
+- 思考中 `thinkingTokens` 用 `chunk.length / 3` 估算，完成后用 API 返回的精确值
+
+## 工具执行状态
+
+- `LoopConfig.onToolResult(name, result)` 每个工具执行完触发
+- 指示器在工具执行时显示 `⠋ 执行工具: bash`，下一轮流式开始自动切回 Think 模式
+- 通过 `isToolPhaseRef` 追踪当前处于思考还是工具执行阶段
+
+## ContentArea 行数
+
+- 弃用 `rows - 12` 硬编码，改为动态计算：
+  ```
+  contentLines = (rows - 3) - 4 - effectiveInputLines - indicatorLines
+  ```
+- `effectiveInputLines` 在粘贴折叠时为 1，正常时按 `\n` 计数
+
+## 欢迎页
+
+- `ContentArea` 在无消息且无流式内容时渲染快捷键帮助面板
+- 有消息后自动消失
 
 ## 测试
 
