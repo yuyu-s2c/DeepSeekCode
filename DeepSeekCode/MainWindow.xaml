@@ -81,43 +81,53 @@
                 </Grid>
             </Border>
 
-            <!-- ═══ Todo 面板（可折叠） ═══ -->
-            <Border x:Name="TodoPanel" Grid.Row="1"
-                    Background="{StaticResource SuccessBgBrush}"
-                    BorderBrush="{StaticResource SuccessBorderBrush}"
-                    BorderThickness="0,0,0,1"
-                    Visibility="Collapsed">
-                <Expander x:Name="TodoExpander" IsExpanded="True"
-                          Foreground="{StaticResource SuccessGreenBrush}"
-                          Background="Transparent" BorderThickness="0"
-                          Padding="14,6"
-                          Expanded="TodoExpander_Expanded"
-                          Collapsed="TodoExpander_Collapsed">
-                    <StackPanel Margin="0,2,0,0">
-                        <ProgressBar x:Name="TodoProgressBar"
-                                     Height="3" Minimum="0" Maximum="100" Value="0"
-                                     Foreground="{StaticResource PrimaryBlueBrush}"
-                                     Background="{StaticResource ProgressBgBrush}"
-                                     Margin="0,0,0,8"/>
-                        <ItemsControl x:Name="TodoItemsControl" Focusable="False"/>
-                    </StackPanel>
-                </Expander>
-            </Border>
+            <!-- ═══ Todo + 子代理面板（左右排列，共享 Row 1） ═══ -->
+            <Grid Grid.Row="1" x:Name="InfoPanel">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-            <!-- ═══ 子代理面板（可折叠） ═══ -->
-            <Border x:Name="SubagentPanel" Grid.Row="1"
-                    Background="{StaticResource SurfaceCardBrush}"
-                    BorderBrush="{StaticResource BorderCardBrush}"
-                    BorderThickness="0,0,0,1"
-                    Visibility="Collapsed">
-                <Expander x:Name="SubagentExpander" IsExpanded="True"
-                          Foreground="{StaticResource RunningBlueBrush}"
-                          Background="Transparent" BorderThickness="0"
-                          Padding="14,6">
-                    <ItemsControl x:Name="SubagentItemsControl"
-                                  Margin="0,2,0,0" Focusable="False"/>
-                </Expander>
-            </Border>
+                <!-- Todo 面板（可折叠） -->
+                <Border x:Name="TodoPanel" Grid.Column="0"
+                        Background="{StaticResource SuccessBgBrush}"
+                        BorderBrush="{StaticResource SuccessBorderBrush}"
+                        BorderThickness="0,0,1,1"
+                        Visibility="Collapsed">
+                    <Expander x:Name="TodoExpander" IsExpanded="True"
+                              Foreground="{StaticResource SuccessGreenBrush}"
+                              Background="Transparent" BorderThickness="0"
+                              Padding="8,3"
+                              FontSize="11"
+                              Expanded="TodoExpander_Expanded"
+                              Collapsed="TodoExpander_Collapsed">
+                        <StackPanel Margin="0,2,0,0">
+                            <ProgressBar x:Name="TodoProgressBar"
+                                         Height="2" Minimum="0" Maximum="100" Value="0"
+                                         Foreground="{StaticResource PrimaryBlueBrush}"
+                                         Background="{StaticResource ProgressBgBrush}"
+                                         Margin="0,0,0,4"/>
+                            <ItemsControl x:Name="TodoItemsControl" Focusable="False"/>
+                        </StackPanel>
+                    </Expander>
+                </Border>
+
+                <!-- 子代理面板（可折叠） -->
+                <Border x:Name="SubagentPanel" Grid.Column="1"
+                        Background="{StaticResource SurfaceCardBrush}"
+                        BorderBrush="{StaticResource BorderCardBrush}"
+                        BorderThickness="0,0,0,1"
+                        Visibility="Collapsed">
+                    <Expander x:Name="SubagentExpander" IsExpanded="True"
+                              Foreground="{StaticResource RunningBlueBrush}"
+                              Background="Transparent" BorderThickness="0"
+                              Padding="8,3"
+                              FontSize="11">
+                        <ItemsControl x:Name="SubagentItemsControl"
+                                      Margin="0,2,0,0" Focusable="False"/>
+                    </Expander>
+                </Border>
+            </Grid>
 
             <!-- ═══ 主对话区 (WebView2) ═══ -->
             <wv2:WebView2 x:Name="ChatViewer" Grid.Row="2"/>

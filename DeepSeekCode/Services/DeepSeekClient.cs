@@ -47,11 +47,12 @@ public class DeepSeekClient : IDisposable
         if (tools.Count > 0)
             requestBody["tools"] = tools;
 
-        // Thinking 模式
-        var thinkingType = config.ThinkingEnabled ? "enabled" : "disabled";
+        // Thinking 模式: adaptive 让模型自行判断是否需要思考
+        var thinkingType = config.ThinkingEnabled ? "adaptive" : "disabled";
         requestBody["thinking"] = new { type = thinkingType };
 
-        if (config.ThinkingEnabled)
+        // adaptive 模式下仍可传 reasoning_effort 作为偏好提示
+        if (config.ThinkingEnabled && !string.IsNullOrEmpty(config.ReasoningEffort))
             requestBody["reasoning_effort"] = config.ReasoningEffort;
 
         // 生成参数（Thinking 模式下无效但发送不报错）

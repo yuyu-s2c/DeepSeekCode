@@ -85,7 +85,7 @@ public abstract class GitToolBase : ITool
 public class GitDiffTool : GitToolBase
 {
     public override string Name => "git_diff";
-    public override string Description => "查看 Git 工作区的文件变更（未暂存 + 已暂存），等同于 git diff HEAD";
+    public override string Description => "Shows working tree changes (unstaged + staged), equivalent to `git diff HEAD`.\n- Use the staged parameter to show only staged changes.\n- Use the path parameter to limit output to a specific file or directory.\n- Use this to inspect what has changed before making commits or to understand the current state of the repository.\n- Prefer this over shell `git diff` — it runs in the workspace directory automatically.";
 
     public override ParameterSchema Parameters => new()
     {
@@ -94,12 +94,12 @@ public class GitDiffTool : GitToolBase
             ["path"] = new PropertySchema
             {
                 Type = "string",
-                Description = "限定到特定文件或目录的路径（可选）"
+                Description = "Limit diff to a specific file or directory (optional)"
             },
             ["staged"] = new PropertySchema
             {
                 Type = "boolean",
-                Description = "仅显示已暂存的变更（--staged），默认显示全部变更"
+                Description = "Show only staged changes (--staged). Default: show all changes (unstaged + staged)"
             }
         },
         Required = []
@@ -123,7 +123,7 @@ public class GitDiffTool : GitToolBase
 public class GitLogTool : GitToolBase
 {
     public override string Name => "git_log";
-    public override string Description => "查看 Git 提交历史，支持限制条数和路径过滤";
+    public override string Description => "Shows Git commit history.\n- Default: last 10 commits in --oneline format.\n- Use count to set the number of commits to show.\n- Use path to filter by a specific file or directory.\n- Use oneline: false for full commit messages with diffs.\n- Use this to understand recent changes, find when a change was introduced, or check commit message conventions.";
 
     public override ParameterSchema Parameters => new()
     {
@@ -132,17 +132,17 @@ public class GitLogTool : GitToolBase
             ["count"] = new PropertySchema
             {
                 Type = "integer",
-                Description = "显示的提交条数，默认 10"
+                Description = "Number of commits to show, default 10"
             },
             ["path"] = new PropertySchema
             {
                 Type = "string",
-                Description = "限定到特定文件或目录的路径（可选）"
+                Description = "Limit commits to a specific file or directory (optional)"
             },
             ["oneline"] = new PropertySchema
             {
                 Type = "boolean",
-                Description = "每条提交一行显示，默认 true"
+                Description = "Show each commit on one line, default true"
             }
         },
         Required = []
@@ -169,7 +169,7 @@ public class GitLogTool : GitToolBase
 public class GitCommitTool : GitToolBase
 {
     public override string Name => "git_commit";
-    public override string Description => "执行 Git 提交。先 git add 指定文件，再 git commit 提交。请确保 commit message 清晰描述变更内容";
+    public override string Description => "Stages and commits changes to Git.\n- Runs `git add` on the specified files (or `git add -A` if no files specified), then `git commit -m`.\n- message is required and should follow conventional commits format (e.g. \"feat: add user login\", \"fix: resolve null reference\").\n- files is optional; provide a comma-separated list of paths, or omit to stage all tracked changes.\n- IMPORTANT: Only use this tool when the user explicitly asks you to commit. Never commit without being asked.\n- File paths are escaped to prevent command injection.\n- This tool may be blocked by the permission system — it requires user approval.";
 
     public override ParameterSchema Parameters => new()
     {
@@ -178,12 +178,12 @@ public class GitCommitTool : GitToolBase
             ["message"] = new PropertySchema
             {
                 Type = "string",
-                Description = "提交信息（遵循 conventional commits 规范）"
+                Description = "Commit message (follow conventional commits format, e.g. \"feat: add login\")"
             },
             ["files"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要提交的文件路径，多个文件用英文逗号分隔。留空则提交所有已追踪的变更（git commit -a）"
+                Description = "Files to commit, comma-separated. Leave empty to commit all tracked changes (git commit -a)"
             }
         },
         Required = ["message"]

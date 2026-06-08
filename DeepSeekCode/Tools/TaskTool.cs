@@ -10,7 +10,7 @@ public class TaskTool : ITool
     private int _taskCounter;
 
     public string Name => "task";
-    public string Description => "启动子代理处理独立的复杂任务。每个子代理拥有独立对话上下文和工具访问权限";
+    public string Description => "Launch a new subagent to handle complex, multi-step tasks autonomously in a background thread pool.\n- Each subagent has its own isolated conversation context and tool access.\n- subagent_type: \"explore\" for read-only code search (uses flash model, no thinking — fast), \"general\" for full read/write access (uses main model with thinking — thorough).\n- description: a short (3-5 word) label for the task, shown in the UI.\n- prompt: the detailed task description — the subagent sees ONLY this and executes it.\n- Multiple task tools can run in parallel with Task.WhenAll for independent work.\n- The subagent returns its final text as the tool result; relay what matters to the user.\n- Subagent context windows are limited (16K tokens) — keep prompts focused and scoped.";
 
     public ParameterSchema Parameters => new()
     {
@@ -19,17 +19,17 @@ public class TaskTool : ITool
             ["description"] = new PropertySchema
             {
                 Type = "string",
-                Description = "任务简短描述（用于 UI 显示，3-5 个字）"
+                Description = "A short (3-5 word) description of the task, shown in the UI"
             },
             ["prompt"] = new PropertySchema
             {
                 Type = "string",
-                Description = "详细的子任务指令。子代理只执行此任务，完成后返回结果"
+                Description = "The detailed task instructions for the subagent. The subagent sees ONLY this prompt and executes it."
             },
             ["subagent_type"] = new PropertySchema
             {
                 Type = "string",
-                Description = "子代理类型。explore=只读探索, general=完整权限",
+                Description = "Subagent type: explore (read-only, flash model, fast) or general (full access, main model, thorough)",
                 Enum = new() { "explore", "general" }
             }
         },

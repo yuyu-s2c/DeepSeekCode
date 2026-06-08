@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.IO;
 using System.Text;
@@ -174,10 +175,44 @@ public partial class MainWindow : Window
 
     private void SetInitialSystemPrompt()
     {
-        // ═══ 短系统提示词 — 仅核心行为规则 ═══
-        var prompt = $@"你是 DeepSeek Code。工作区: {_workspaceService.WorkspacePath}
+        var ws = _workspaceService.WorkspacePath;
+        var wsName = _workspaceService.WorkspaceName;
 
-规则：了解代码可以用工具探索，修改代码需用户明确授权。查代码用 grep/read_file 给出准确回答，不猜测。用户消息是唯一任务来源，不自行创造需求。回复简洁直接。";
+        var prompt = $"""
+You are DeepSeek Code, a desktop AI coding assistant powered by DeepSeek V4 Pro.
+
+You are an interactive agent that helps users with software engineering tasks.
+
+IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (code injection, process manipulation, network attacks) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases.
+
+# Harness
+ - Text you output outside of tool use is displayed to the user as GitHub-flavored markdown in a WPF desktop application.
+ - Tools run behind a three-button permission dialog (Deny / Allow Once / Allow All); a denied call means the user declined it — adjust, don't retry verbatim. A Deny cancels the current conversation turn entirely.
+ - Prefer the dedicated file/search tools over shell commands when one fits. Independent tool calls can run in parallel in one response.
+ - Reference code as `file_path:line_number` — it's clickable.
+
+Write code that reads like the surrounding code: match its comment density, naming, and idiom.
+
+For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn't extend to the next. Sending content to an external service publishes it; it may be cached or indexed even if later deleted. Before deleting or overwriting, look at the target — if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding. Report outcomes faithfully: if tests fail, say so with the output; if a step was skipped, say that; when something is done and verified, state it plainly without hedging.
+
+# Session-specific guidance
+ - When the user types `/<command-name>`, invoke it via the SlashCommand system. Only use commands listed in the available commands section — don't guess.
+ - Available skills are listed in system context messages. Use the read_skill tool to load a skill's full instructions before relying on its guidance.
+
+# Environment
+You are running in the following environment:
+ - Primary working directory: {ws}
+ - Workspace: {wsName}
+ - Is a git repository: true
+ - Platform: win32
+ - Shell: PowerShell 7+ (use PowerShell syntax — e.g., Test-Path not test, Remove-Item not rm)
+ - Build: .NET 10 SDK, C# 13, MSBuild via Visual Studio at D:\VisualStudio\
+ - Build command: `dotnet build` (target: 0 errors, 0 warnings)
+  - The project is a WPF desktop application with WebView2 chat rendering, ServiceLocator DI, EventBus pub/sub, 13 tools, 10 slash commands.
+
+# Context management
+When the conversation grows beyond the context window limit, older messages are trimmed by a sliding window — the earliest conversation rounds are dropped while keeping system messages, recent messages, and the current task intact. Work can continue normally; you do not need to wrap up early or hand off mid-task. If you notice that earlier context may be missing, use read_file to re-check the current state of files rather than relying on memory of what was said.
+""";
 
         _conversation.SetSystemPrompt(prompt);
 
@@ -190,6 +225,96 @@ public partial class MainWindow : Window
         var skillsIndex = _skillEngine.GenerateSkillsIndex();
         if (!string.IsNullOrEmpty(skillsIndex))
             _conversation.AppendSystemContext(skillsIndex);
+
+        // ═══ Git 状态 — 参考 Claude Code 的 gitStatus 注入 ═══
+        var gitStatusContext = GetGitStatusContext();
+        if (gitStatusContext != null)
+            _conversation.AppendSystemContext(gitStatusContext);
+    }
+
+    /// <summary>
+    /// 获取 Git 状态快照，注入到系统提示词。
+    /// 参考 Claude Code 的 gitStatus 块：当前分支、变更文件、最近提交。
+    /// </summary>
+    private string? GetGitStatusContext()
+    {
+        var ws = _workspaceService.WorkspacePath;
+        if (!Directory.Exists(Path.Combine(ws, ".git")))
+            return null;
+
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("gitStatus: This is the git status at the start of the conversation. Note that this status is a snapshot in time and will not update during the conversation.");
+            sb.AppendLine();
+
+            var branch = RunGitCommand(ws, "branch --show-current");
+            if (!string.IsNullOrEmpty(branch))
+                sb.AppendLine($"Current branch: {branch}");
+
+            sb.AppendLine();
+
+            var status = RunGitCommand(ws, "status --short");
+            if (!string.IsNullOrEmpty(status))
+            {
+                var statusLines = status.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var truncated = statusLines.Take(20);
+                sb.AppendLine("Status:");
+                foreach (var line in truncated)
+                    sb.AppendLine($" {line.TrimEnd()}");
+                if (statusLines.Length > 20)
+                    sb.AppendLine($" ...({statusLines.Length - 20} more files)");
+            }
+            else
+            {
+                sb.AppendLine("Status: (clean)");
+            }
+
+            sb.AppendLine();
+
+            var log = RunGitCommand(ws, "log --oneline -3");
+            if (!string.IsNullOrEmpty(log))
+            {
+                sb.AppendLine("Recent commits:");
+                foreach (var line in log.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    sb.AppendLine($" {line.TrimEnd()}");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? RunGitCommand(string workdir, string args)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = args,
+                    WorkingDirectory = workdir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(3000);
+            return string.IsNullOrWhiteSpace(output) ? null : output;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ═══════════════════════════════════════════
@@ -393,6 +518,7 @@ public partial class MainWindow : Window
             _thinkingActive = false;
             _lastThinkChunk = DateTime.MinValue;
             _iterationFirstContent = true;
+            _aiStreamBuffer.Clear();
 
             // 上下文裁剪
             var messages = await _conversation.GetProcessedMessagesAsync();
@@ -741,9 +867,28 @@ public partial class MainWindow : Window
     private async void UpdateToolCardComplete(string toolCallId, bool success, TimeSpan elapsed, string? resultText)
     {
         var elapsedStr = TimingService.FormatElapsed(elapsed);
-        var display = resultText?.Length > 300 ? resultText[..300] + "\n...（共 N 行）" : resultText ?? "";
+
+        // 分离 diff 内容：工具卡只显示摘要，diff 块渲染为独立 Markdown
+        var summary = resultText ?? "";
+        string? diffBlock = null;
+
+        if (resultText != null)
+        {
+            var diffIdx = resultText.IndexOf("```diff", StringComparison.Ordinal);
+            if (diffIdx >= 0)
+            {
+                summary = resultText[..diffIdx].TrimEnd('\n', '\r');
+                diffBlock = resultText[diffIdx..];
+            }
+        }
+
+        var display = summary.Length > 300 ? summary[..300] + "..." : summary;
         await _chatRenderer.UpdateToolCardComplete(toolCallId, success, elapsedStr, display);
         _activeToolCards.Remove(toolCallId);
+
+        // 将 diff 作为独立 Markdown 块渲染到对话区
+        if (!string.IsNullOrEmpty(diffBlock))
+            await _chatRenderer.AppendAiContent(diffBlock);
     }
 
     /// <summary>
@@ -776,10 +921,15 @@ public partial class MainWindow : Window
 
         TodoPanel.Visibility = Visibility.Visible;
         TodoExpander.Foreground = (Brush)Application.Current.Resources["SuccessGreenBrush"];
-        TodoExpander.Header = completed == total
+        var allDone = completed == total;
+        TodoExpander.Header = allDone
             ? $"任务 ✓ 全部完成 ({completed}/{total})"
             : $"任务 ({completed}/{total})";
         TodoProgressBar.Value = percent;
+
+        // 全部完成时自动折叠，节省空间；用户可手动展开查看明细
+        if (allDone)
+            TodoExpander.IsExpanded = false;
 
         TodoItemsControl.Items.Clear();
         foreach (var todo in todos)
@@ -813,15 +963,15 @@ public partial class MainWindow : Window
             var item = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 1, 0, 1)
+                Margin = new Thickness(0, 0, 0, 0)
             };
 
             var iconRun = new TextBlock
             {
                 Text = icon,
                 Foreground = fgColor,
-                FontSize = 12,
-                Margin = new Thickness(0, 0, 6, 0),
+                FontSize = 10,
+                Margin = new Thickness(0, 0, 4, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
             item.Children.Add(iconRun);
@@ -830,7 +980,7 @@ public partial class MainWindow : Window
             {
                 Text = $"{todo.Content}{priorityMark}",
                 Foreground = fgColor,
-                FontSize = 12,
+                FontSize = 10,
                 TextDecorations = textDeco,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap
@@ -900,6 +1050,9 @@ public partial class MainWindow : Window
         // 仅 spinner tick 触发时只更新运行中的文本，不重建整个列表
         if (!_subagentNeedsRebuild)
         {
+            // 全部完成时无需更新 spinner，直接返回
+            if (_subagentList.All(s => s.Completed)) return;
+
             for (var i = 0; i < _subagentList.Count; i++)
             {
                 var info = _subagentList[i];
@@ -920,9 +1073,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        SubagentExpander.Header = _subagentList.Any(s => !s.Completed)
+        var allSubagentDone = _subagentList.All(s => s.Completed);
+        SubagentExpander.Header = !allSubagentDone
             ? $"子代理 (运行中: {_subagentList.Count(s => !s.Completed)})"
             : "子代理 ✓ 全部完成";
+
+        // 全部完成时自动折叠，节省空间
+        if (allSubagentDone)
+            SubagentExpander.IsExpanded = false;
 
         SubagentItemsControl.Items.Clear();
 
@@ -933,7 +1091,7 @@ public partial class MainWindow : Window
             var row = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 2, 0, 2)
+                Margin = new Thickness(0, 0, 0, 0)
             };
 
             if (info.Completed)
@@ -947,8 +1105,8 @@ public partial class MainWindow : Window
                 {
                     Text = $"{icon} [{info.Type}] {info.Description}",
                     Foreground = fg,
-                    FontSize = 12,
-                    Margin = new Thickness(0, 0, 8, 0)
+                    FontSize = 10,
+                    Margin = new Thickness(0, 0, 6, 0)
                 });
 
                 if (info.Summary != null)
@@ -957,9 +1115,9 @@ public partial class MainWindow : Window
                     {
                         Text = info.Summary,
                         Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-                        FontSize = 11,
+                        FontSize = 10,
                         TextTrimming = TextTrimming.CharacterEllipsis,
-                        MaxWidth = 400
+                        MaxWidth = 300
                     });
                 }
             }
@@ -972,15 +1130,15 @@ public partial class MainWindow : Window
                 {
                     Text = $"{spinFrame} [{info.Type}] {info.Description}",
                     Foreground = (Brush)Application.Current.Resources["RunningBlueBrush"],
-                    FontSize = 12,
-                    Margin = new Thickness(0, 0, 8, 0)
+                    FontSize = 10,
+                    Margin = new Thickness(0, 0, 6, 0)
                 });
 
                 row.Children.Add(new TextBlock
                 {
                     Text = $"{elapsed:F1}s",
                     Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-                    FontSize = 11
+                    FontSize = 10
                 });
             }
 

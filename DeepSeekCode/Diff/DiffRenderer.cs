@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -130,28 +132,77 @@ public static class DiffRenderer
     {
         var diffs = ComputeDiff(oldText, newText);
         diffs = TrimContext(diffs);
+        var added = diffs.Count(d => d.Type == DiffLineType.Added);
+        var removed = diffs.Count(d => d.Type == DiffLineType.Removed);
 
         var section = new Section
         {
             Margin = new Thickness(0, 8, 0, 4)
         };
 
-        // 统计变更行数
+        // 标题行
+        var headerPara = CreateDiffHeader(fileName, added, removed);
+        section.Blocks.Add(headerPara);
+
+        // Diff 行
+        foreach (var diff in diffs)
+            section.Blocks.Add(CreateDiffParagraph(diff));
+
+        return section;
+    }
+
+    /// <summary>
+    /// 生成纯文本格式的 diff，用于工具返回值
+    /// </summary>
+    public static string FormatTextDiff(string oldText, string newText, string fileName, int maxLines = 30)
+    {
+        var diffs = ComputeDiff(oldText, newText);
+        diffs = TrimContext(diffs);
+        if (diffs.Count == 0 || diffs.All(d => d.Type == DiffLineType.Unchanged))
+            return string.Empty;
+
         var added = diffs.Count(d => d.Type == DiffLineType.Added);
         var removed = diffs.Count(d => d.Type == DiffLineType.Removed);
 
-        // 标题行
-        var headerPara = new Paragraph
+        var sb = new StringBuilder();
+        sb.AppendLine($"```diff");
+        sb.AppendLine($"--- {fileName} (+{added}/-{removed})");
+
+        var shown = 0;
+        foreach (var diff in diffs)
+        {
+            if (shown >= maxLines)
+            {
+                sb.AppendLine($"... ({diffs.Count - shown} more lines)");
+                break;
+            }
+            var prefix = diff.Type switch
+            {
+                DiffLineType.Added => "+ ",
+                DiffLineType.Removed => "- ",
+                _ => "  "
+            };
+            sb.AppendLine($"{prefix}{diff.Text}");
+            shown++;
+        }
+        sb.AppendLine("```");
+
+        return sb.ToString();
+    }
+
+    private static Paragraph CreateDiffHeader(string fileName, int added, int removed)
+    {
+        var para = new Paragraph
         {
             Margin = new Thickness(0, 0, 0, 4)
         };
-        headerPara.Inlines.Add(new Run("Diff: ")
+        para.Inlines.Add(new Run("Diff: ")
         {
             Foreground = new SolidColorBrush(Color.FromRgb(26, 42, 56)),
             FontSize = 13,
             FontWeight = FontWeights.Bold
         });
-        headerPara.Inlines.Add(new Run(fileName)
+        para.Inlines.Add(new Run(fileName)
         {
             Foreground = new SolidColorBrush(Color.FromRgb(56, 160, 224)),
             FontSize = 13,
@@ -159,66 +210,57 @@ public static class DiffRenderer
         });
         if (added > 0 || removed > 0)
         {
-            headerPara.Inlines.Add(new Run("  ")
-            {
-                FontSize = 11
-            });
+            para.Inlines.Add(new Run("  ") { FontSize = 11 });
             if (added > 0)
-                headerPara.Inlines.Add(new Run($"+{added}")
+                para.Inlines.Add(new Run($"+{added}")
                 {
                     Foreground = new SolidColorBrush(Color.FromRgb(58, 160, 88)),
                     FontSize = 11
                 });
             if (added > 0 && removed > 0)
-                headerPara.Inlines.Add(new Run("  ")
-                {
-                    FontSize = 11
-                });
+                para.Inlines.Add(new Run("  ") { FontSize = 11 });
             if (removed > 0)
-                headerPara.Inlines.Add(new Run($"-{removed}")
+                para.Inlines.Add(new Run($"-{removed}")
                 {
                     Foreground = new SolidColorBrush(Color.FromRgb(192, 64, 64)),
                     FontSize = 11
                 });
         }
-        section.Blocks.Add(headerPara);
+        return para;
+    }
 
-        // Diff 行
-        foreach (var diff in diffs)
+    private static Paragraph CreateDiffParagraph(DiffLine diff)
+    {
+        var prefix = diff.Type switch
         {
-            var prefix = diff.Type switch
-            {
-                DiffLineType.Added => "+ ",
-                DiffLineType.Removed => "- ",
-                _ => "  "
-            };
+            DiffLineType.Added => "+ ",
+            DiffLineType.Removed => "- ",
+            _ => "  "
+        };
 
-            var fgColor = diff.Type switch
-            {
-                DiffLineType.Added => Color.FromRgb(42, 120, 50),
-                DiffLineType.Removed => Color.FromRgb(180, 40, 40),
-                _ => Color.FromRgb(120, 140, 160)
-            };
+        var fgColor = diff.Type switch
+        {
+            DiffLineType.Added => Color.FromRgb(42, 120, 50),
+            DiffLineType.Removed => Color.FromRgb(180, 40, 40),
+            _ => Color.FromRgb(120, 140, 160)
+        };
 
-            var bgColor = diff.Type switch
-            {
-                DiffLineType.Added => Color.FromRgb(232, 248, 232),
-                DiffLineType.Removed => Color.FromRgb(248, 232, 232),
-                _ => diff.Text == "..." ? Color.FromRgb(248, 248, 248) : Color.FromRgb(255, 255, 255)
-            };
+        var bgColor = diff.Type switch
+        {
+            DiffLineType.Added => Color.FromRgb(232, 248, 232),
+            DiffLineType.Removed => Color.FromRgb(248, 232, 232),
+            _ => diff.Text == "..." ? Color.FromRgb(248, 248, 248) : Color.FromRgb(255, 255, 255)
+        };
 
-            section.Blocks.Add(new Paragraph(new Run($"{prefix}{diff.Text}"))
-            {
-                FontSize = 11,
-                FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
-                Foreground = new SolidColorBrush(fgColor),
-                Background = new SolidColorBrush(bgColor),
-                Margin = new Thickness(0),
-                Padding = new Thickness(8, 1, 8, 1),
-                LineHeight = 1.3
-            });
-        }
-
-        return section;
+        return new Paragraph(new Run($"{prefix}{diff.Text}"))
+        {
+            FontSize = 11,
+            FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
+            Foreground = new SolidColorBrush(fgColor),
+            Background = new SolidColorBrush(bgColor),
+            Margin = new Thickness(0),
+            Padding = new Thickness(8, 1, 8, 1),
+            LineHeight = 1.3
+        };
     }
 }

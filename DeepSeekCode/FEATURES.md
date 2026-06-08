@@ -47,19 +47,20 @@
 | 编号 | 功能 | 描述 | 状态 | 优先级 |
 |------|------|------|------|--------|
 | A01 | **事件总线** | 全局 EventBus，支持 URL ↔ 核心逻辑松耦合通信。22 个事件类型 | ✅ 已完成 | 🔴 P0 |
-| A02 | **权限系统** | Allow / Deny / Ask 三级权限。危险命令默认 Deny，可信任标记 Always。已接入 ToolPipeline | ✅ 已完成 | 🔴 P0 |
+| A02 | **权限系统** | Allow / Deny / Ask 三级权限。危险命令默认 Deny（命令名精确匹配），可信任标记 Always。已接入 ToolPipeline | ✅ 已完成 | 🔴 P0 |
 | A03 | **配置体系** | 用户级 `~/.deepseek-code/config.json` + 项目级 `.deepseek-code/project.json`。12 项配置、四 Tab 设置窗口 | ✅ 已完成 | 🔴 P0 |
 | A04 | **上下文策略** | 滑动窗口 + 智能裁剪 + 系统提示词注入 + 项目文件引用。已接入 ConversationManager | ✅ 已完成 | 🟡 P1 |
 | A05 | **工作区服务** | 自动检测项目根目录（.git/.sln/.csproj），点击切换 + /workspace 命令 | ✅ 已完成 | — |
-| A06 | **Skills 系统** | Markdown 驱动技能文件，按需加载（仅注入索引，正文通过 read_skill 工具获取）。34 个 Claude Code 技能已迁移 | ✅ 已完成 | 🟡 P1 |
-| A07 | **子代理 (Subagent)** | 并行分派独立任务（线程池 + Task.Run），独立 V4 Flash 模型，explore/general 双模式，带取消令牌和超时保护 | ✅ 已完成 | 🟢 P2 |
+| A06 | **Skills 系统** | Markdown 驱动技能文件，全量 description 注入系统提示词（Claude Code 风格），正文通过 read_skill 工具获取 | ✅ 已完成 | 🟡 P1 |
+| A07 | **子代理 (Subagent)** | 并行分派独立任务（线程池 + Task.Run），独立 V4 Flash 模型，explore/general 双模式，带取消令牌和超时保护。全部完成自动折叠面板 | ✅ 已完成 | 🟢 P2 |
+| A08 | **系统提示词优化** | 英文 Claude Code Harness 风格，含 Git 状态注入、Context management 通知、工具 Description 微文档化、Skills 全量注入 | ✅ 已完成 | 🔴 P0 |
 
 ### 3.2 核心功能层（Features）
 
 | 编号 | 功能 | 描述 | 状态 | 优先级 |
 |------|------|------|------|--------|
-| F01 | **DeepSeek API 流式对话** | 支持 chat 和 reasoner 模型，SSE 流式解析，thinking/reasoning_content 渲染 | ✅ 已完成 | — |
-| F02 | **工具系统 (Function Calling)** | 13 个工具：read_file, edit_file, write_file, glob, grep, shell, webfetch, read_skill, git_diff, git_log, git_commit, todo_write, task | ✅ 已完成 | — |
+| F01 | **DeepSeek API 流式对话** | 支持 chat 和 reasoner 模型，SSE 流式解析，thinking: adaptive 自适应思考，reasoning_effort 控制 | ✅ 已完成 | — |
+| F02 | **工具系统 (Function Calling)** | 13 个工具（均英文 Description + 微文档化参数说明）：read_file, edit_file, write_file, glob, grep, shell, webfetch, read_skill, git_diff, git_log, git_commit, todo_write, task | ✅ 已完成 | — |
 | F03 | **Markdown 渲染** | Markdig → FlowDocument，支持标题、代码块、列表、引用、粗斜体、链接 | ✅ 已完成 | — |
 | F04 | **Thinking 面板** | 右侧可折叠面板，实时展示 reasoning_content | ✅ 已完成 | — |
 | F05 | **Slash 命令系统** | /help /clear /model /save /load /settings /workspace /config /compact /skills 共 10 个命令 | ✅ 已完成 | 🔴 P0 |
@@ -69,7 +70,7 @@
 | F08 | **Web 抓取 (webfetch)** | 抓取网页文档内容（Markdown/Text/HTML） | ✅ 已完成 | 🟡 P1 |
 | F09 | **项目指令** | 自动读取项目根目录的 `DEEPSEEK.md` 并注入上下文 | ✅ 已完成 | 🟡 P1 |
 | F10 | **Todo 追踪** | AI 自动创建/更新任务列表，可视化进度面板（进度条 + 状态图标 + 优先级标记） | ✅ 已完成 | 🟢 P2 |
-| F11 | **代码 Diff 预览** | 文件编辑前后对比，LCS 行级 diff + 绿色(+)/红色(-) 渲染，支持 edit_file 和 write_file | ✅ 已完成 | 🟢 P2 |
+| F11 | **代码 Diff 预览** | 文件编辑前后对比，LCS 行级 diff + 绿色(+)/红色(-) 渲染。edit_file / write_file 工具自动生成 diff 并渲染到对话区 | ✅ 已完成 | 🟢 P2 |
 | F12 | **代码语法高亮** | 对话区代码块语法着色（C#、JS、Python、Go 等 30+ 语言） | ✅ 已完成 | 🟡 P1 |
 
 ### 3.3 UI/UX 层（Experience）
@@ -84,7 +85,7 @@
 | U05 | **命令自动补全** | 输入 `/` 弹出命令列表，↑↓ 选择，Enter/Tab 填入 | ✅ 已完成 | — |
 | U06 | **系统托盘** | 最小化到托盘，常驻后台 | ❌ 待实现 | 🟢 P3 |
 | U07 | **快捷键** | Ctrl+Enter 发送、Ctrl+L 清屏（Window.PreviewKeyDown 全局注册） | ✅ 已完成 | 🟢 P2 |
-| U08 | **UI 全面重构** | 白底天蓝配色，WebView2 + marked.js/highlight.js 实时 Markdown 渲染，工具卡片 HTML 化，思考动画折叠，900K 上下文窗口，JsonElement 参数安全解析，权限内联确认 | ✅ 已完成 | 🟢 P3 |
+| U08 | **UI 全面重构** | 白底天蓝配色，WebView2 + marked.js/highlight.js 实时 Markdown 渲染，工具卡片 HTML 化，思考动画折叠，900K 上下文窗口，Todo/Subagent 面板左右排列，全部完成自动折叠 | ✅ 已完成 | 🟢 P3 |
 
 ### 3.4 AI 工具层（AI Tools）
 
@@ -200,9 +201,9 @@ DeepSeekCode/
 ├── Skills/
 │   └── SkillEngine.cs                  # Markdown+Frontmatter 技能引擎
 ├── Markdown/
-│   ├── ChatRenderer.cs                # WebView2 HTML 模板 + marked.js/highlight.js 渲染
 │   └── SyntaxHighlighter.cs            # ColorCode + HtmlAgilityPack 语法高亮
 ├── UI/
+│   ├── ChatRenderer.cs                 # WebView2 HTML 模板 + marked.js/highlight.js 渲染
 │   └── StatusViewModel.cs              # 状态栏 MVVM（Token/缓存/模型）
 ├── Controls/
 └── NativeFolderPicker.cs

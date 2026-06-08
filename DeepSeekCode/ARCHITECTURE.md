@@ -38,10 +38,10 @@
 - 事件类型：流式输出（Started/Chunk/Completed/Cancelled/Error）、工具调用（Request/Result）、权限询问、会话切换、配置变更
 
 ### 对话引擎
-- **DeepSeekClient**：封装 DeepSeek API（SSE 流式 HTTP、thinking/reasoning_content 解析、reasoning_effort: max）
+- **DeepSeekClient**：封装 DeepSeek API（SSE 流式 HTTP、thinking: adaptive 自适应思考、reasoning_effort 控制）
 - **ConversationManager**：消息列表管理、上下文窗口控制（900K token 滑动窗口）
 - **ContextStrategy**：上下文策略接口 + 实现（滑动窗口裁剪、智能压缩预留、文件注入）
-- **ChatRenderer**：WebView2 渲染引擎，marked.js + highlight.js + KaTeX 实时 Markdown/代码/数学渲染
+- **ChatRenderer**：WebView2 渲染引擎，marked.js + highlight.js + KaTeX 实时 Markdown/代码/数学渲染，工具 diff 独立渲染到对话区
 
 ### 工具系统
 - **ITool**：工具接口（Name + Description + Parameters + ExecuteAsync）
@@ -52,8 +52,8 @@
 ### 权限系统
 - **PermissionManager**：Allow / Deny / Ask 三级权限 + 会话级"允许所有"临时覆盖
 - 三按钮弹窗：拒绝（立即停止对话）、允许本次、允许所有（本轮后续不再询问）
-- Deny 规则（危险命令）始终生效，不受"允许所有"影响
-- 默认规则：只读工具 Allow、危险命令 Deny、写操作 Ask
+- Deny 规则（危险命令）始终生效，不受"允许所有"影响；**匹配方式：命令名精确匹配（首词），防止子串误伤**
+- 默认规则：只读工具 Allow、危险命令 Deny（rm/del/format）、写操作 Ask
 
 ### Slash 命令
 - **ISlashCommand**：命令接口
@@ -84,17 +84,26 @@
 - 取消传播：主 CancelToken 注入参数，停止按钮一并取消子代理
 
 ### Diff 预览
-- **DiffRenderer**：LCS 行级 diff 算法 + WPF Section 彩色渲染
+- **DiffRenderer**：LCS 行级 diff 算法 + WPF Section 彩色渲染 + `FormatTextDiff` 纯文本输出
 - 绿色(+) 新增行、红色(-) 删除行、深色背景区分
 - 智能裁剪：只展示变更区域 + 最多 8 行上下文
+- **edit_file / write_file 自动生成 diff**，以 Markdown 独立块渲染到对话区
 
 ### Todo 追踪
 - **TodoWriteTool**：todo_write 工具，完整替换任务列表
 - UI 面板：进度条 + 状态图标（○/⏳/✔/✘）+ 优先级标记（⚡）
+- **全部完成时自动折叠**（节省空间）
 
 ### 思考意图提取
 - 流式输出中从 `reasoning_content` 尾部提取意图型句子（Let me/I'll/我先/接下来...）
 - 显示在思考状态栏，让用户实时了解 AI 下一步计划
+
+### 系统提示词架构
+- **参考 Claude Code Harness 风格**：英文 Markdown，分 Harness / Session / Environment / Context management 四个板块
+- **工具 Description 微文档化**：13 个工具均为 Claude Code 风格的详细文档（When to use / Constraints / Tips）
+- **Skills 全量注入**：所有已启用 Skill 的完整 description 注入 system 消息（而非仅索引）
+- **Git 状态注入**：启动时自动捕获 git branch / status / recent commits，以独立 system 消息注入
+- **Context management 通知**：告知模型滑动窗口裁剪机制，消除"上下文要爆了"的焦虑
 
 ## 渲染技术栈
 - **Markdown**：marked.js（CDN v12）→ 流式实时渲染

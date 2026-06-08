@@ -10,7 +10,7 @@ public class TodoWriteTool : ITool
 
     public string Name => "todo_write";
 
-    public string Description => "创建或更新任务列表。每次调用会替换整个任务列表";
+    public string Description => "Creates and maintains a structured task list for the current coding session.\n- Each call REPLACES the entire task list — send the full list of current tasks every time.\n- Each task has: content (description), status (pending / in_progress / completed / cancelled), and priority (high / medium / low).\n- Mark the current task in_progress BEFORE beginning work on it. Only ONE task in_progress at a time.\n- Mark a task completed ONLY after the work is actually done and verified (tests pass, build succeeds).\n- When a new task is discovered during work, add it to the next update.\n- Use proactively for any task requiring 3+ distinct steps. Skip for single straightforward actions.";
 
     public ParameterSchema Parameters => new()
     {
@@ -19,7 +19,7 @@ public class TodoWriteTool : ITool
             ["todos"] = new PropertySchema
             {
                 Type = "array",
-                Description = "任务列表，每次调用会完整替换",
+                Description = "The complete task list. Each call REPLACES the entire list.",
                 Items = new PropertySchema
                 {
                     Type = "object",
@@ -28,18 +28,18 @@ public class TodoWriteTool : ITool
                         ["content"] = new PropertySchema
                         {
                             Type = "string",
-                            Description = "任务描述"
+                            Description = "Brief description of the task"
                         },
                         ["status"] = new PropertySchema
                         {
                             Type = "string",
-                            Description = "任务状态",
+                            Description = "Current status: pending, in_progress, completed, or cancelled",
                             Enum = new() { "pending", "in_progress", "completed", "cancelled" }
                         },
                         ["priority"] = new PropertySchema
                         {
                             Type = "string",
-                            Description = "优先级",
+                            Description = "Priority level: high, medium, or low",
                             Enum = new() { "high", "medium", "low" }
                         }
                     },

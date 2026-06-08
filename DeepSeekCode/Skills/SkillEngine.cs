@@ -130,8 +130,8 @@ public class SkillEngine
     }
 
     /// <summary>
-    /// 生成技能索引（仅名称+描述，不包含正文），注入系统提示词。
-    /// 参考 Claude Code 的按需加载模式，正文通过 read_skill 工具按需获取。
+    /// 生成技能索引，注入系统提示词。全量输出所有已启用技能的 name + description，
+    /// 正文通过 read_skill 工具按需获取。参考 Claude Code 的全量注入模式。
     /// </summary>
     public string GenerateSkillsIndex()
     {
@@ -140,16 +140,15 @@ public class SkillEngine
             return string.Empty;
 
         var sb = new StringBuilder();
-        sb.AppendLine("## 可用技能");
-        sb.AppendLine("当任务涉及以下领域时，**必须先调用 read_skill 工具**加载对应技能全文再回答。");
+        sb.AppendLine("## Available Skills");
+        sb.AppendLine("The following skills are available for use with the read_skill tool. When a task falls into a skill's domain, use read_skill to load the full instructions before proceeding.");
         sb.AppendLine();
 
         foreach (var skill in allSkills)
         {
-            sb.Append($"- **{skill.Name}**");
+            sb.AppendLine($"- **{skill.Name}**");
             if (!string.IsNullOrWhiteSpace(skill.Description))
-                sb.Append($" — {Truncate(skill.Description, 80)}");
-            sb.AppendLine();
+                sb.AppendLine($"  {skill.Description}");
         }
 
         return sb.ToString().TrimEnd();

@@ -16,7 +16,7 @@ public class ReadSkillTool : ITool
     }
 
     public string Name => "read_skill";
-    public string Description => "按需读取指定技能的完整内容。当需要某个技能领域的专业知识时调用此工具";
+    public string Description => "Loads the full content of a skill on demand.\n- name must match a skill from the available skills list shown in the system context.\n- Use this when a task falls into a skill's domain and you need the detailed instructions.\n- Returns the skill's frontmatter metadata and full body (capped at 8000 characters).\n- Do NOT call this for skills already loaded in the current conversation.\n- If a skill name is not found, use /skills to see the available list.";
 
     public ParameterSchema Parameters => new()
     {
@@ -25,7 +25,7 @@ public class ReadSkillTool : ITool
             ["name"] = new PropertySchema
             {
                 Type = "string",
-                Description = "技能名称（来自可用技能列表）"
+                Description = "The name of the skill to load (from the available skills list)"
             }
         },
         Required = ["name"]

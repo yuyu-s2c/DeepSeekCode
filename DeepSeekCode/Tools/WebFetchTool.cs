@@ -36,7 +36,7 @@ public class WebFetchTool : ITool
     private static readonly Regex NewlineRegex = new(@"\n{3,}", RegexOptions.Compiled);
 
     public string Name => "webfetch";
-    public string Description => "抓取网页 URL 的内容，HTML 页面自动转为纯文本（保留标题和正文、移除导航和广告等噪声）";
+    public string Description => "Fetches content from a specified URL and returns it in the chosen format.\n- HTTP URLs are automatically upgraded to HTTPS.\n- Fails on localhost/127.0.0.1/internal IPs for security.\n- HTML pages are automatically cleaned: navigation, ads, scripts, and other noise are stripped; only title and body text are preserved.\n- Returns text (default, plain text), markdown (preserves Markdown formatting), or html (raw HTML).\n- Timeout: 30 seconds. Read limit: 500KB.\n- Use this for reading official documentation, API references, and technical articles. Do NOT use for authenticated/private pages.";
 
     public ParameterSchema Parameters => new()
     {
@@ -45,12 +45,12 @@ public class WebFetchTool : ITool
             ["url"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要抓取的网页 URL（仅支持 http/https 协议）"
+                Description = "The URL to fetch content from"
             },
             ["format"] = new PropertySchema
             {
                 Type = "string",
-                Description = "返回格式：text（纯文本，默认）、markdown（保留 Markdown 格式）、html（原始 HTML）",
+                Description = "The format to return: text (plain text, default), markdown, or html",
                 Enum = ["text", "markdown", "html"]
             }
         },

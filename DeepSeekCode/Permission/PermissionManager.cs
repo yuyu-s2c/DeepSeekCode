@@ -43,7 +43,13 @@ public class PermissionRule
         if (Pattern == null)
             return true;
 
-        return command != null && command.Contains(Pattern, StringComparison.OrdinalIgnoreCase);
+        if (command == null)
+            return false;
+
+        // 只匹配命令的第一个词（命令名），避免子串误伤
+        // 如 "del " 不应命中 "dotnet publish -o ./delivery"
+        var firstWord = command.TrimStart().Split(' ')[0];
+        return string.Equals(firstWord, Pattern.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -121,27 +127,27 @@ public class PermissionManager
             Description = "代码搜索始终安全"
         });
 
-        // 危险 shell 命令默认禁止
+        // 危险 shell 命令默认禁止（匹配命令名）
         _rules.Add(new PermissionRule
         {
             ToolName = "shell",
-            Pattern = "rm ",
+            Pattern = "rm",
             Level = PermissionLevel.Deny,
-            Description = "删除命令默认禁止"
+            Description = "rm 删除命令默认禁止"
         });
         _rules.Add(new PermissionRule
         {
             ToolName = "shell",
-            Pattern = "del ",
+            Pattern = "del",
             Level = PermissionLevel.Deny,
-            Description = "删除命令默认禁止"
+            Description = "del 删除命令默认禁止"
         });
         _rules.Add(new PermissionRule
         {
             ToolName = "shell",
-            Pattern = "format ",
+            Pattern = "format",
             Level = PermissionLevel.Deny,
-            Description = "格式化命令默认禁止"
+            Description = "format 格式化命令默认禁止"
         });
 
         // 写文件工具需要询问

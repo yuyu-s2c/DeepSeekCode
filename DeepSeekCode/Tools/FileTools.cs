@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using DeepSeekCode.Diff;
 using DeepSeekCode.Models;
 using Microsoft.Extensions.FileSystemGlobbing;
 
@@ -8,7 +9,7 @@ namespace DeepSeekCode.Tools;
 public class FileReadTool : ITool
 {
     public string Name => "read_file";
-    public string Description => "读取指定文件的内容";
+    public string Description => "Reads a file from the local filesystem.\n- filePath must be an absolute path.\n- You can specify an optional offset and limit (especially handy for long files), but it's recommended to read the whole file when possible.\n- Results are returned in cat -n format, with line numbers starting at 1.\n- You MUST read a file before editing it — Edit will fail otherwise.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed.\n- Reading a directory or a missing file returns an error rather than content.";
 
     public ParameterSchema Parameters => new()
     {
@@ -17,17 +18,17 @@ public class FileReadTool : ITool
             ["filePath"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要读取的文件路径（绝对路径或相对路径）"
+                Description = "The absolute path to the file to read"
             },
             ["offset"] = new PropertySchema
             {
                 Type = "integer",
-                Description = "从第几行开始读取（可选，从 1 开始）"
+                Description = "Line number to start reading from (1-indexed, optional)"
             },
             ["limit"] = new PropertySchema
             {
                 Type = "integer",
-                Description = "最多读取多少行（可选）"
+                Description = "Maximum number of lines to read (optional)"
             }
         },
         Required = ["filePath"]
@@ -76,7 +77,7 @@ public class FileReadTool : ITool
 public class FileEditTool : ITool
 {
     public string Name => "edit_file";
-    public string Description => "精确替换文件中的文本。找到 oldString 并用 newString 替换";
+    public string Description => "Performs exact string replacement in a file.\n- You MUST Read the file in this conversation before editing, or the call will fail.\n- oldString must match the file content exactly, including all whitespace and indentation, and be unique in the file — the edit fails if the match is ambiguous. If you get a multiple-match error, provide more surrounding lines in oldString to make it unique.\n- newString must be different from oldString.\n- Set replaceAll to true to replace every occurrence instead of just the first one.\n- Prefer this over write_file for targeted changes. Only use write_file when creating a new file or doing a full rewrite.";
 
     public ParameterSchema Parameters => new()
     {
@@ -85,22 +86,22 @@ public class FileEditTool : ITool
             ["filePath"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要编辑的文件路径"
+                Description = "The absolute path to the file to modify"
             },
             ["oldString"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要被替换的原文本"
+                Description = "The text to replace"
             },
             ["newString"] = new PropertySchema
             {
                 Type = "string",
-                Description = "替换后的新文本"
+                Description = "The text to replace it with (must be different from oldString)"
             },
             ["replaceAll"] = new PropertySchema
             {
                 Type = "boolean",
-                Description = "是否替换所有匹配项（默认 false，只替换第一个）"
+                Description = "Replace all occurrences of oldString (default false, replaces only the first)"
             }
         },
         Required = ["filePath", "oldString", "newString"]
@@ -128,30 +129,40 @@ public class FileEditTool : ITool
 
         try
         {
-            var content = File.ReadAllText(filePath);
+            var oldContent = File.ReadAllText(filePath);
 
-            var index = content.IndexOf(oldString, StringComparison.Ordinal);
+            var index = oldContent.IndexOf(oldString, StringComparison.Ordinal);
             if (index == -1)
                 return Task.FromResult("错误: 在文件中未找到要替换的原文本");
 
+            string newContent;
             if (replaceAll)
             {
                 var count = 0;
-                var temp = content;
+                var temp = oldContent;
                 while (temp.Contains(oldString))
                 {
                     var i = temp.IndexOf(oldString, StringComparison.Ordinal);
                     temp = temp[..i] + newString + temp[(i + oldString.Length)..];
                     count++;
                 }
-                File.WriteAllText(filePath, temp);
-                return Task.FromResult($"替换成功，共替换了 {count} 处");
+                newContent = temp;
+                File.WriteAllText(filePath, newContent);
+
+                var diff = DiffRenderer.FormatTextDiff(oldContent, newContent, Path.GetFileName(filePath));
+                return Task.FromResult(string.IsNullOrEmpty(diff)
+                    ? $"替换成功，共替换了 {count} 处"
+                    : $"替换成功，共替换了 {count} 处\n\n{diff}");
             }
             else
             {
-                content = content[..index] + newString + content[(index + oldString.Length)..];
-                File.WriteAllText(filePath, content);
-                return Task.FromResult("替换成功");
+                newContent = oldContent[..index] + newString + oldContent[(index + oldString.Length)..];
+                File.WriteAllText(filePath, newContent);
+
+                var diff = DiffRenderer.FormatTextDiff(oldContent, newContent, Path.GetFileName(filePath));
+                return Task.FromResult(string.IsNullOrEmpty(diff)
+                    ? "替换成功"
+                    : $"替换成功\n\n{diff}");
             }
         }
         catch (Exception ex)
@@ -164,7 +175,7 @@ public class FileEditTool : ITool
 public class FileWriteTool : ITool
 {
     public string Name => "write_file";
-    public string Description => "将内容写入文件（覆盖已有文件或创建新文件）";
+    public string Description => "Writes a file to the local filesystem, overwriting if one exists.\n- filePath must be an absolute path.\n- Parent directories are created automatically if they don't exist.\n- Overwriting an existing file you haven't read will be blocked — you must Read it first to confirm you know what you are replacing.\n- Prefer edit_file for targeted changes. Use this tool only when creating a new file or doing a full-content rewrite of a file you've already read.\n- This tool will overwrite the existing file if there is one at the provided path without prompting — double-check filePath before calling.";
 
     public ParameterSchema Parameters => new()
     {
@@ -173,12 +184,12 @@ public class FileWriteTool : ITool
             ["filePath"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要写入的文件路径"
+                Description = "The absolute path to the file to write"
             },
             ["content"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要写入的文本内容"
+                Description = "The content to write to the file"
             }
         },
         Required = ["filePath", "content"]
@@ -205,8 +216,20 @@ public class FileWriteTool : ITool
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
+            var existed = File.Exists(filePath);
+            var oldContent = existed ? File.ReadAllText(filePath) : null;
             File.WriteAllText(filePath, content);
-            return Task.FromResult($"文件已写入: {filePath}");
+
+            var fileName = Path.GetFileName(filePath);
+            if (existed && oldContent != null)
+            {
+                var diff = DiffRenderer.FormatTextDiff(oldContent, content, fileName);
+                return Task.FromResult(string.IsNullOrEmpty(diff)
+                    ? $"文件已覆盖: {filePath}"
+                    : $"文件已覆盖: {filePath}\n\n{diff}");
+            }
+
+            return Task.FromResult($"文件已创建: {filePath}");
         }
         catch (Exception ex)
         {
@@ -218,7 +241,7 @@ public class FileWriteTool : ITool
 public class GlobTool : ITool
 {
     public string Name => "glob";
-    public string Description => "按 glob 模式搜索文件（如 **/*.cs、src/**/*.xaml）";
+    public string Description => "Fast file pattern matching tool that works with any codebase size.\n- Supports glob patterns like \"**/*.cs\" or \"src/**/*.tsx\".\n- Returns matching file paths sorted by modification time.\n- Use this to find files by name patterns — do NOT use shell ls/dir for file search.\n- The path parameter is optional; omit it to search from the current working directory.\n- When doing an open-ended search that may require multiple rounds of globbing and grepping, combine with grep rather than running shell find.";
 
     public ParameterSchema Parameters => new()
     {
@@ -227,12 +250,12 @@ public class GlobTool : ITool
             ["pattern"] = new PropertySchema
             {
                 Type = "string",
-                Description = "glob 匹配模式"
+                Description = "The glob pattern to match files against (e.g. \"**/*.cs\", \"src/**/*.tsx\")"
             },
             ["path"] = new PropertySchema
             {
                 Type = "string",
-                Description = "搜索根目录（可选，默认当前目录）"
+                Description = "The directory to search in. Defaults to the current working directory if omitted."
             }
         },
         Required = ["pattern"]
@@ -278,7 +301,7 @@ public class GlobTool : ITool
 public class GrepTool : ITool
 {
     public string Name => "grep";
-    public string Description => "在文件内容中搜索正则表达式匹配";
+    public string Description => "Fast content search tool that works with any codebase size.\n- Searches file contents using full regex syntax (e.g. \"log.*Error\", \"function\\s+\\w+\").\n- Returns file paths and line numbers with at least one match, sorted by modification time.\n- Filter files by pattern with the include parameter (e.g. \"*.cs\", \"*.{ts,tsx}\").\n- Prefer this over shell grep/Select-String for code searches.\n- Limit: scans up to 100 files and returns up to 50 matching results. Skipped files (permission errors, binary) are silently ignored.\n- When doing a broad search across many files, use grep first to locate candidate files, then read_file to examine the specific sections.";
 
     public ParameterSchema Parameters => new()
     {
@@ -287,17 +310,17 @@ public class GrepTool : ITool
             ["pattern"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要搜索的正则表达式"
+                Description = "The regular expression pattern to search for"
             },
             ["path"] = new PropertySchema
             {
                 Type = "string",
-                Description = "搜索目录路径（可选，默认当前目录）"
+                Description = "The directory to search in. Defaults to the current working directory if omitted."
             },
             ["include"] = new PropertySchema
             {
                 Type = "string",
-                Description = "文件名过滤模式，如 *.cs（可选）"
+                Description = "File name pattern to filter by (e.g. \"*.cs\", \"*.{ts,tsx}\"), optional"
             }
         },
         Required = ["pattern"]

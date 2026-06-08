@@ -21,7 +21,7 @@ public class ShellTool : ITool
     };
 
     public string Name => "shell";
-    public string Description => "在当前终端中执行 Shell 命令";
+    public string Description => "Executes a PowerShell 7+ command and returns its output.\n- The command runs in pwsh.exe with -NoProfile for a clean environment.\n- Working directory can be specified via the workdir parameter; otherwise uses the current workspace.\n- timeout is 60 seconds; commands exceeding this are killed with entire process tree.\n- Output is truncated at 4000 characters if longer.\n- IMPORTANT: Prefer the dedicated file/search tools over shell commands when one fits. Avoid using this to run ls, dir, cat, grep, find, or echo — use glob, grep, and read_file instead.\n- Wrap file paths with spaces in double quotes.\n- Use && for sequential dependent commands. Use ; for sequential independent commands.\n- Dangerous commands (rm, del, format, shutdown, etc.) are blocked by the permission system regardless of user settings.\n- Interactive commands (those requiring user input) will hang until timeout — do not use them.";
 
     public ParameterSchema Parameters => new()
     {
@@ -30,12 +30,12 @@ public class ShellTool : ITool
             ["command"] = new PropertySchema
             {
                 Type = "string",
-                Description = "要执行的 Shell 命令"
+                Description = "The command to execute"
             },
             ["workdir"] = new PropertySchema
             {
                 Type = "string",
-                Description = "命令执行的工作目录（可选）"
+                Description = "The working directory to run the command in (optional)"
             }
         },
         Required = ["command"]
