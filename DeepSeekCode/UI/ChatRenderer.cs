@@ -125,8 +125,11 @@ public class ChatRenderer
 <meta charset=""UTF-8"">
 <meta name=""viewport"" content=""width=device-width,initial-scale=1"">
 <script src=""https://cdn.jsdelivr.net/npm/marked@12/marked.min.js""></script>
-<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css"">
-<script src=""https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js""></script>
+<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github.min.css"">
+<script src=""https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js""></script>
+<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"">
+<script src=""https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js""></script>
+<script src=""https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js""></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;background:#fff;padding:12px 16px 80px;line-height:1.7}
@@ -138,9 +141,9 @@ body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;backg
 .ai-content p{margin:4px 0}
 .ai-content h1,.ai-content h2,.ai-content h3,.ai-content h4{font-weight:700;margin:12px 0 4px;color:#1a2a38}
 .ai-content h1{font-size:20px}.ai-content h2{font-size:17px}.ai-content h3{font-size:15px}
-.ai-content code{font-family:'Cascadia Code',Consolas,monospace;font-size:13px;background:#f2f7fb;color:#c04040;padding:1px 4px;border-radius:3px}
-.ai-content pre{overflow-x:auto;margin:8px 0}
-.ai-content pre code{font-size:13px}
+.ai-content :not(pre)>code{font-family:'Cascadia Code',Consolas,monospace;font-size:13px;background:#f2f7fb;color:#c04040;padding:1px 4px;border-radius:3px}
+.ai-content pre{overflow-x:auto;margin:8px 0;background:#f2f7fb;border:1px solid #d8e6f2;border-radius:4px;padding:10px 14px}
+.ai-content pre code{font-size:13px;background:transparent}
 .ai-content blockquote{border-left:3px solid #38a0e0;background:#f2f7fb;padding:8px 12px;margin:6px 0;color:#4a6070}
 .ai-content ul,.ai-content ol{padding-left:20px;margin:4px 0}
 .ai-content li{margin:2px 0}
@@ -169,29 +172,36 @@ body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;backg
 </head>
 <body><div id=""chat""></div></body>
 <script>
-marked.setOptions({breaks:true,gfm:true,highlight:function(code,lang){return hljs.highlightAuto(code,lang?[lang]:[]).value}});
+marked.setOptions({breaks:true,gfm:true});
 
 let aiBlock=null,thinkBlock=null;
 
+function protectMath(t){try{var m={},n=0;t=t.replace(/\$\$([\s\S]*?)\$\$/g,function(x){var k='%%M'+ ++n +'%%';m[k]=x;return k});t=t.replace(/\$([^$\n]+)\$/g,function(x){var k='%%M'+ ++n +'%%';m[k]=x;return k});return{text:t,map:m}}catch(e){return{text:t,map:{}}}}
+function restoreMath(h,m){try{for(var k in m)h=h.split(k).join(m[k]);return h}catch(e){return h}}
+
 function scrollToBottom(){window.scrollTo(0,document.body.scrollHeight)}
 
-function appendSystemMessage(t){document.getElementById('chat').innerHTML+=`<div class=""sys-msg"">${t}</div>`}
+function highlightAllCode(container){try{container.querySelectorAll('pre code').forEach(function(b){if(typeof hljs!=='undefined')hljs.highlightElement(b)})}catch(e){}}
 
-function appendUserMessage(t){document.getElementById('chat').innerHTML+=`<div class=""user-msg""><div class=""label"">▸ 你</div><div class=""content"">${t}</div></div>`}
+function renderMath(container){try{if(typeof renderMathInElement!=='undefined')renderMathInElement(container,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],ignoredTags:['script','noscript','style','textarea','pre','code']})}catch(e){}}
 
-function appendAiContent(t){aiBlock=document.createElement('div');aiBlock.className='ai-content';aiBlock.innerHTML=marked.parse(t);document.getElementById('chat').appendChild(aiBlock)}
+function appendSystemMessage(t){var d=document.createElement('div');d.className='sys-msg';d.textContent=t;document.getElementById('chat').appendChild(d);scrollToBottom()}
 
-function updateAiContent(t){if(!aiBlock){appendAiContent(t);return}aiBlock.innerHTML=marked.parse(t)}
+function appendUserMessage(t){aiBlock=null;thinkBlock=null;var d=document.createElement('div');d.className='user-msg';var l=document.createElement('div');l.className='label';l.textContent='▸ 你';var c=document.createElement('div');c.className='content';c.textContent=t;d.appendChild(l);d.appendChild(c);document.getElementById('chat').appendChild(d);scrollToBottom()}
 
-function appendToolCard(id,name,param){var d=document.createElement('div');d.className='tool-card';d.id='tc-'+id;d.innerHTML=`<div class=""header""><span class=""name"">⣾ ${name}</span><span class=""param"">${param||''}</span><span class=""time"">⏱ ...</span></div><div class=""result""></div>`;document.getElementById('chat').appendChild(d)}
+function appendAiContent(t){var p=protectMath(t);aiBlock=document.createElement('div');aiBlock.className='ai-content';aiBlock.innerHTML=restoreMath(marked.parse(p.text),p.map);document.getElementById('chat').appendChild(aiBlock);highlightAllCode(aiBlock);renderMath(aiBlock);scrollToBottom()}
+
+function updateAiContent(t){if(!aiBlock){appendAiContent(t);return}var p=protectMath(t);aiBlock.innerHTML=restoreMath(marked.parse(p.text),p.map);highlightAllCode(aiBlock);renderMath(aiBlock);scrollToBottom()}
+
+function appendToolCard(id,name,param){var d=document.createElement('div');d.className='tool-card';d.id='tc-'+id;d.innerHTML=`<div class=""header""><span class=""name"">⣾ ${name}</span><span class=""param"">${param||''}</span><span class=""time"">⏱ ...</span></div><div class=""result""></div>`;document.getElementById('chat').appendChild(d);scrollToBottom()}
 
 function updateToolCard(id,status,elapsed,result){var c=document.getElementById('tc-'+id);if(!c)return;c.className='tool-card '+status;var icon=status==='success'?'✔':'✕';c.querySelector('.name').textContent=icon+' '+c.querySelector('.name').textContent.replace(/^[^ ]+ /,'');c.querySelector('.time').textContent='⏱ '+elapsed;if(result)c.querySelector('.result').textContent=result}
 
 function updateToolCardElapsed(id,elapsed){var c=document.getElementById('tc-'+id);if(!c)return;c.querySelector('.time').textContent='⏱ '+elapsed}
 
-function appendThinkingCard(t){thinkBlock=document.createElement('div');thinkBlock.className='think-card expanded';thinkBlock.innerHTML=`<div class=""header"" onclick=""toggleThinking(this)"">⣾ 思考中...</div><div class=""content"">${t}</div>`;document.getElementById('chat').appendChild(thinkBlock)}
+function appendThinkingCard(t){thinkBlock=document.createElement('div');thinkBlock.className='think-card expanded';thinkBlock.innerHTML=`<div class=""header"" onclick=""toggleThinking(this)"">⣾ 思考中...</div><div class=""content"">${t}</div>`;document.getElementById('chat').appendChild(thinkBlock);scrollToBottom()}
 
-function updateThinkingCard(t){if(!thinkBlock){appendThinkingCard(t);return}thinkBlock.querySelector('.content').textContent=t}
+function updateThinkingCard(t){if(!thinkBlock){appendThinkingCard(t);return}thinkBlock.querySelector('.content').textContent=t;scrollToBottom()}
 
 function collapseThinkingCard(){if(!thinkBlock||thinkBlock.classList.contains('collapsed'))return;thinkBlock.classList.remove('expanded');thinkBlock.classList.add('collapsed');thinkBlock.querySelector('.content').style.display='none';thinkBlock.querySelector('.header').textContent='▶ 思考过程（'+thinkBlock.querySelector('.content').textContent.length+' 字）'}
 

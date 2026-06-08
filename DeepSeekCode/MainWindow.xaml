@@ -28,31 +28,57 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- ═══ 标题栏 ═══ -->
+        <!-- ═══ 标题栏 ═══ -->
             <Border Grid.Row="0"
                     Background="{StaticResource SurfaceTintBrush}"
                     BorderBrush="{StaticResource BorderLightBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="10,7">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="📁" FontSize="11" VerticalAlignment="Center"/>
-                    <TextBlock Text="DeepSeek Code"
-                               Foreground="{StaticResource PrimaryBlueBrush}"
-                               FontSize="12" FontWeight="Bold"
-                               Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    <TextBlock Text=" — "
-                               Foreground="{StaticResource PrimaryLightBrush}"
-                               FontSize="12" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="WorkspaceLabel"
-                               Text="..."
-                               Foreground="{StaticResource PrimaryLightBrush}"
-                               FontSize="11"
-                               FontFamily="Cascadia Code, Consolas, monospace"
-                               VerticalAlignment="Center"
-                               Cursor="Hand"
-                               MouseLeftButtonDown="WorkspaceBar_Click"
-                               ToolTip="点击切换工作区"/>
-                </StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <TextBlock Text="📁" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Text="DeepSeek Code"
+                                    Foreground="{StaticResource PrimaryBlueBrush}"
+                                    FontSize="12" FontWeight="Bold"
+                                    Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        <TextBlock Text=" — "
+                                    Foreground="{StaticResource PrimaryLightBrush}"
+                                    FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="WorkspaceLabel"
+                                    Text="..."
+                                    Foreground="{StaticResource PrimaryLightBrush}"
+                                    FontSize="11"
+                                    FontFamily="Cascadia Code, Consolas, monospace"
+                                    VerticalAlignment="Center"
+                                    Cursor="Hand"
+                                    MouseLeftButtonDown="WorkspaceBar_Click"
+                                    ToolTip="点击切换工作区"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="1"
+                            x:Name="HistoryButton"
+                            Content="💬 历史"
+                            Click="HistoryButton_Click"
+                            Height="26"
+                            Background="Transparent"
+                            Foreground="{StaticResource PrimaryLightBrush}"
+                            FontSize="11"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            VerticalAlignment="Center"
+                            ToolTip="查看当前工作区的历史会话">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="4"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                </Grid>
             </Border>
 
             <!-- ═══ Todo 面板（可折叠） ═══ -->
@@ -96,27 +122,54 @@
             <!-- ═══ 主对话区 (WebView2) ═══ -->
             <wv2:WebView2 x:Name="ChatViewer" Grid.Row="2"/>
 
-            <!-- ═══ 停止按钮（浮在输入区上方） ═══ -->
+            <!-- ═══ 思考状态栏（仅流式输出中显示） ═══ -->
             <Border Grid.Row="3"
-                    HorizontalAlignment="Center"
-                    Margin="0,0,0,4">
-                <Button x:Name="StopButton"
-                        Content="■ 停止生成"
-                        Visibility="Collapsed"
-                        Click="StopButton_Click"
-                        Height="26"
-                        Background="{StaticResource ErrorRedBrush}"
-                        Foreground="White"
-                        FontSize="11"
-                        BorderThickness="0"
-                        Cursor="Hand"
-                        Padding="16,0">
-                    <Button.Resources>
-                        <Style TargetType="Border">
-                            <Setter Property="CornerRadius" Value="4"/>
-                        </Style>
-                    </Button.Resources>
-                </Button>
+                    x:Name="ThinkingBar"
+                    Background="{StaticResource SurfaceTintBrush}"
+                    BorderBrush="{StaticResource BorderLightBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="14,8"
+                    Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="ThinkingSpinner"
+                                   Text="⣾"
+                                   FontSize="15"
+                                   Foreground="{StaticResource PrimaryBlueBrush}"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Cascadia Code, Consolas, monospace"/>
+                        <TextBlock x:Name="ThinkingIntentLabel"
+                                   Text="AI 正在思考…"
+                                   Foreground="{StaticResource PrimaryDarkBrush}"
+                                   FontSize="13"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,0,0"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="1"
+                            x:Name="StopButton"
+                            Content="■ 停止生成"
+                            Click="StopButton_Click"
+                            Height="28"
+                            Width="100"
+                            Background="{StaticResource ErrorRedBrush}"
+                            Foreground="White"
+                            FontSize="12"
+                            BorderThickness="0"
+                            Cursor="Hand">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="4"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                </Grid>
             </Border>
 
             <!-- ═══ 输入区 ═══ -->
@@ -240,34 +293,134 @@
                     Background="{StaticResource SurfaceTintBrush}"
                     BorderBrush="{StaticResource BorderLightBrush}"
                     BorderThickness="0,1,0,0"
-                    Padding="14,4">
+                    Padding="14,5">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="StatusIndicatorLabel"
-                               Text=""
-                               Foreground="{StaticResource PrimaryBlueBrush}"
-                               FontSize="10"
-                               Margin="0,0,14,0"/>
                     <TextBlock x:Name="StatusModelLabel"
-                               Text="deepseek-v4-pro"
-                               Foreground="{StaticResource PrimaryBlueBrush}"
-                               FontSize="10" FontWeight="SemiBold"
-                               Margin="0,0,14,0"/>
+                                Text="deepseek-v4-pro"
+                                Foreground="{StaticResource PrimaryBlueBrush}"
+                                FontSize="13" FontWeight="SemiBold"
+                                VerticalAlignment="Center"
+                                Margin="0,0,20,0"/>
                     <TextBlock x:Name="StatusTokenLabel"
-                               Text="Token: 0"
-                               Foreground="{StaticResource PrimaryLightBrush}"
-                               FontSize="10"
-                               Margin="0,0,14,0"/>
+                                Text="Token: 0"
+                                Foreground="{StaticResource PrimaryLightBrush}"
+                                FontSize="13"
+                                VerticalAlignment="Center"
+                                Margin="0,0,20,0"/>
                     <TextBlock x:Name="StatusCacheLabel"
-                               Text=""
-                               Foreground="{StaticResource SuccessGreenBrush}"
-                               FontSize="10"/>
+                                Text=""
+                                Foreground="{StaticResource SuccessGreenBrush}"
+                                FontSize="13"
+                                VerticalAlignment="Center"/>
                     <TextBlock x:Name="StatusTimingLabel"
-                               Text=""
-                               Foreground="{StaticResource PrimaryLightBrush}"
-                               FontSize="10"
-                               Margin="20,0,0,0"/>
+                                Text=""
+                                Foreground="{StaticResource PrimaryLightBrush}"
+                                FontSize="13"
+                                VerticalAlignment="Center"
+                                Margin="20,0,0,0"/>
                 </StackPanel>
             </Border>
+
+            <!-- ═══ 历史会话弹窗 ═══ -->
+            <Popup x:Name="HistoryPopup"
+                Placement="Bottom"
+                PlacementTarget="{Binding ElementName=HistoryButton}"
+                StaysOpen="False"
+                AllowsTransparency="True"
+                Width="360">
+                <Border Background="White"
+                        BorderBrush="{StaticResource PrimaryBlueBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="4">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                    Text="历史会话"
+                                    Foreground="{StaticResource PrimaryBlueBrush}"
+                                    FontSize="12" FontWeight="Bold"
+                                    Margin="8,6,8,2"/>
+
+                        <ListBox x:Name="HistoryListBox"
+                                Grid.Row="1"
+                                Background="Transparent"
+                                Foreground="{StaticResource PrimaryDarkBrush}"
+                                BorderThickness="0"
+                                MaxHeight="320"
+                                MinHeight="60"
+                                FontSize="13"
+                                FontFamily="Microsoft YaHei"
+                                KeyDown="HistoryListBox_KeyDown"
+                                MouseDoubleClick="HistoryListBox_MouseDoubleClick">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="10,6"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Border"
+                                                        Background="{TemplateBinding Background}"
+                                                        CornerRadius="4"
+                                                        Padding="8,6">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Border" Property="Background"
+                                                                Value="{StaticResource PrimaryBlueBrush}"/>
+                                                        <Setter TargetName="Border" Property="TextElement.Foreground"
+                                                                Value="White"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Border" Property="Background"
+                                                                Value="{StaticResource SurfaceCardBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+
+                        <TextBlock x:Name="HistoryEmptyLabel"
+                                    Grid.Row="1"
+                                    Text="暂无历史会话"
+                                    Foreground="{StaticResource PrimaryLightBrush}"
+                                    FontSize="12"
+                                    Margin="10,16"
+                                    Visibility="Collapsed"/>
+
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="DeleteSessionButton"
+                                    Content="删除"
+                                    Click="DeleteSessionButton_Click"
+                                    Height="30"
+                                    Background="Transparent"
+                                    Foreground="{StaticResource ErrorRedBrush}"
+                                    FontSize="12"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Padding="10,0"/>
+                            <Button Content="＋ 新建对话"
+                                    Click="NewSessionButton_Click"
+                                    Height="30"
+                                    Background="Transparent"
+                                    Foreground="{StaticResource PrimaryBlueBrush}"
+                                    FontSize="12"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Padding="10,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Popup>
         </Grid>
     </Border>
 </Window>

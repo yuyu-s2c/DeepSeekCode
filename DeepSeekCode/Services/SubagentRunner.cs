@@ -113,10 +113,10 @@ public class SubagentRunner
         {
             ApiKey = main.ApiKey,
             ApiBaseUrl = main.ApiBaseUrl,
-            Model = main.Model,
+            Model = subagentType == "explore" ? "deepseek-v4-flash" : main.Model,
             MaxTokens = main.MaxTokens,
             ThinkingEnabled = enableThinking,
-            ReasoningEffort = enableThinking ? "medium" : "",
+            ReasoningEffort = enableThinking ? "high" : "",
             Temperature = main.Temperature,
             TopP = main.TopP,
             FrequencyPenalty = main.FrequencyPenalty,
@@ -241,13 +241,12 @@ public class SubagentRunner
         var pipeline = new Tools.ToolPipeline(tool, _workspaceService);
 
         // 权限过滤器：子代理模式 —— Allow/Ask 都通过，Deny 拦截
-        pipeline.AddFilter(new Tools.PermissionPipelineFilter(_permissionManager, name =>
+        pipeline.AddFilter(new Tools.PermissionPipelineFilter(_permissionManager, (name, command) =>
         {
-            var level = _permissionManager.Check(name,
-                args.TryGetValue("command", out var c) ? c?.ToString() : null);
-
+            var level = _permissionManager.Check(name, command);
             // 子代理模式下 Ask 等同于 Allow（用户已授权子代理工作）
-            return Task.FromResult<bool?>(level != PermissionLevel.Deny);
+            return Task.FromResult<PermissionDecision?>(level != PermissionLevel.Deny 
+                ? PermissionDecision.AllowOnce : PermissionDecision.Deny);
         }));
 
         // 日志过滤器

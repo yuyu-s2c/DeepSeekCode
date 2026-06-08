@@ -40,7 +40,7 @@ public partial class App : Application
         locator.RegisterInstance(configService);
 
         // 工作区
-        var workspaceService = new WorkspaceService(eventBus);
+        var workspaceService = new WorkspaceService(configService, eventBus);
         locator.RegisterInstance(workspaceService);
 
         // 耗时追踪
@@ -108,6 +108,7 @@ public partial class App : Application
 
         // ── 6. Slash 命令系统 ──
         var sessionStore = new FileSessionStore();
+        sessionStore.SetWorkspace(workspaceService.WorkspacePath);
         locator.RegisterInstance<ISessionStore>(sessionStore);
 
         var commandRegistry = new SlashCommandRegistry();

@@ -16,6 +16,7 @@ using DeepSeekCode.Models;
 using DeepSeekCode.Services;
 using DeepSeekCode.Tools;
 using DeepSeekCode.UI;
+using DeepSeekCode.Session;
 
 namespace DeepSeekCode;
 
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
     private readonly StatusViewModel _statusVm;
     private readonly TimingService _timingService;
     private readonly ChatRenderer _chatRenderer;
+    private readonly ISessionStore _sessionStore;
 
     private CancellationTokenSource? _currentCancellation;
     private bool _isStreaming;
@@ -50,6 +52,12 @@ public partial class MainWindow : Window
 
     // 工具卡片追踪（仅用于耗时更新）
     private readonly HashSet<string> _activeToolCards = new();
+
+    // 未保存变更追踪
+    private bool _hasUnsavedChanges;
+
+    // 每轮 while 迭代首次输出内容标记
+    private bool _iterationFirstContent;
 
     // 进度指示器
     private DispatcherTimer? _spinnerTimer;
@@ -83,8 +91,11 @@ public partial class MainWindow : Window
         _chatRenderer = new ChatRenderer(ChatViewer);
         _ = _chatRenderer.InitializeAsync(); // fire-and-forget，WebView2 初始化需要一点时间
 
+        _sessionStore = locator.Resolve<ISessionStore>();
+
         SubscribeToEvents();
         SetInitialSystemPrompt();
+        _permissionManager.ResetSession();
         InitializeChat();
         UpdateStatusBar();
     }
@@ -118,6 +129,10 @@ public partial class MainWindow : Window
             {
                 Title = $"DeepSeek Code - {Path.GetFileName(e.Path.TrimEnd(Path.DirectorySeparatorChar))}";
                 WorkspaceLabel.Text = e.Path;
+                _sessionStore.SetWorkspace(e.Path);
+                _conversation.ClearConversation();
+                _permissionManager.ResetSession();
+                _ = _chatRenderer.ClearChat();
                 AppendSystemMessage($"工作区已切换: {e.Path}");
                 SetInitialSystemPrompt();
             }));
@@ -132,9 +147,25 @@ public partial class MainWindow : Window
     private async void OnPermissionRequested(PermissionRequestEvent e)
     {
         var toolName = e.ToolName ?? "";
-        var result = await Dispatcher.InvokeAsync(() =>
-            ShowInlinePermissionAsync(toolName, e.Command ?? toolName));
-        e.UserDecision = await result;
+        var command = e.Command ?? toolName;
+
+        var decision = await Dispatcher.InvokeAsync(() =>
+        {
+            var dialog = new PermissionDialog(toolName, command) { Owner = this };
+            dialog.ShowDialog();
+            return dialog.Decision;
+        });
+
+        if (decision == PermissionDecision.Deny)
+        {
+            // 拒绝 → 取消本轮对话
+            _currentCancellation?.Cancel();
+            e.UserDecision = false;
+        }
+        else
+        {
+            e.UserDecision = true;
+        }
     }
 
     // ═══════════════════════════════════════════
@@ -292,7 +323,6 @@ public partial class MainWindow : Window
         _timingService.StartRound();
         _activeToolCards.Clear();
         StartStatusSpinner("AI 正在思考…");
-        StopButton.Visibility = Visibility.Visible;
         _thinkingBuffer = "";
         _thinkingActive = false;
         _lastThinkChunk = DateTime.MinValue;
@@ -310,12 +340,21 @@ public partial class MainWindow : Window
                     _ = _chatRenderer.ClearChat();
                     InitializeChat();
                 }
+                // /save 或 /clear 后标记已保存
+                if (text.Trim() == "/clear" || text.Trim().StartsWith("/save"))
+                    _hasUnsavedChanges = false;
+                if (text.Trim() == "/clear")
+                {
+                    _commandContext.CurrentSessionId = null;
+                    _permissionManager.ResetSession();
+                }
                 FinishStreaming();
                 return;
             }
         }
 
         // 2. 发送给 AI
+        _hasUnsavedChanges = true;
         AppendUserMessage(text);
         _conversation.AddUserMessage(text);
 
@@ -349,10 +388,11 @@ public partial class MainWindow : Window
 
         while (true)
         {
-            // 每次 AI 迭代独立一张思考卡片
+            // 每次 AI 迭代独立一张思考卡片 + 内容块
             _thinkingBuffer = "";
             _thinkingActive = false;
             _lastThinkChunk = DateTime.MinValue;
+            _iterationFirstContent = true;
 
             // 上下文裁剪
             var messages = await _conversation.GetProcessedMessagesAsync();
@@ -448,6 +488,8 @@ public partial class MainWindow : Window
                 _conversation.AddAssistantMessageWithToolCalls(toolCalls, _thinkingBuffer);
                 Dispatcher.Invoke(() =>
                 {
+                    _thinkingActive = false;
+                    _ = _chatRenderer.CollapseThinkingCard();
                     AppendToolCards(toolCalls);
                     UpdateSpinnerText($"正在执行: {string.Join(", ", toolCalls.Select(t => t.Function.Name))}…");
                 });
@@ -609,12 +651,15 @@ public partial class MainWindow : Window
 
         // 权限过滤器
         pipeline.AddFilter(new PermissionPipelineFilter(_permissionManager,
-            async name =>
+            async (name, command) =>
             {
-                var command = args.TryGetValue("command", out var cmd) ? cmd?.ToString() : null;
                 var task = await Dispatcher.InvokeAsync(() =>
-                    ShowInlinePermissionAsync(name, command ?? name));
-                return (bool?)await task;
+                {
+                    var dialog = new PermissionDialog(name, command) { Owner = this };
+                    dialog.ShowDialog();
+                    return dialog.Decision;
+                });
+                return task;
             }));
 
         // 日志过滤器
@@ -655,7 +700,17 @@ public partial class MainWindow : Window
     private void AppendStreamText(string text)
     {
         _aiStreamBuffer.Append(text);
-        _ = _chatRenderer.UpdateAiContent(_aiStreamBuffer.ToString());
+        if (_iterationFirstContent)
+        {
+            _iterationFirstContent = false;
+            _thinkingActive = false;
+            _ = _chatRenderer.CollapseThinkingCard();
+            _ = _chatRenderer.AppendAiContent(_aiStreamBuffer.ToString());
+        }
+        else
+        {
+            _ = _chatRenderer.UpdateAiContent(_aiStreamBuffer.ToString());
+        }
     }
 
     private void FlushCurrentAiParagraph()
@@ -962,24 +1017,6 @@ public partial class MainWindow : Window
     /// <summary>
     /// 权限确认对话框
     /// </summary>
-    private Task<bool> ShowInlinePermissionAsync(string toolName, string command)
-    {
-        var displayCmd = command ?? toolName;
-        if (displayCmd.Length > 100) displayCmd = displayCmd[..100] + "...";
-
-        var result = MessageBox.Show(
-            $"允许执行 {toolName}: {displayCmd} 吗？",
-            "⚠ 权限确认",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        AppendSystemMessage(result == MessageBoxResult.Yes
-            ? $"✔ 已允许: {toolName}"
-            : $"✕ 已拒绝: {toolName}");
-
-        return Task.FromResult(result == MessageBoxResult.Yes);
-    }
-
     // ═══════════════════════════════════════════
     //  辅助方法
     // ═══════════════════════════════════════════
@@ -1084,34 +1121,75 @@ public partial class MainWindow : Window
         EnsureSpinnerTimer();
         _toolProgressText = text;
         _spinnerIndex = 0;
-        StatusIndicatorLabel.Text = $"{SpinnerFrames[0]} {_toolProgressText}";
+        ThinkingBar.Visibility = Visibility.Visible;
+        ThinkingSpinner.Text = SpinnerFrames[0];
+        ThinkingIntentLabel.Text = _toolProgressText;
         _spinnerTimer!.Start();
     }
 
     private void UpdateSpinnerText(string text)
     {
         _toolProgressText = text;
+        ThinkingIntentLabel.Text = text;
     }
 
     private void StopStatusSpinner()
     {
         _spinnerTimer?.Stop();
-        StatusIndicatorLabel.Text = "";
+        ThinkingBar.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>从思考内容尾部提取意图型句子，让用户知道模型下一步要干嘛</summary>
+    private static string ExtractIntent(string thinkingBuffer)
+    {
+        if (string.IsNullOrWhiteSpace(thinkingBuffer))
+            return "AI 正在思考…";
+
+        // 取尾部最后 300 字（最新的思考）
+        var tail = thinkingBuffer.Length > 300
+            ? thinkingBuffer[^300..]
+            : thinkingBuffer;
+
+        // 按句号/换行拆分，从后往前找意图句
+        var sentences = System.Text.RegularExpressions.Regex.Split(tail, @"(?<=[.\n])");
+        for (var i = sentences.Length - 1; i >= 0; i--)
+        {
+            var s = sentences[i].Trim();
+            if (s.Length < 5) continue;
+
+            if (s.Length > 60) s = s[..60] + "…";
+
+            // 匹配意图关键词
+            if (System.Text.RegularExpressions.Regex.IsMatch(s,
+                @"\b(Let me|I['']ll|I need to|I should|Now I|Next I|First I|I will|我要|我先|我现在|接下来)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                return s;
+            }
+        }
+
+        return "AI 正在思考…";
     }
 
     private void SpinnerTimer_Tick(object? sender, EventArgs e)
     {
         _spinnerIndex = (_spinnerIndex + 1) % SpinnerFrames.Length;
-        StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
+        ThinkingSpinner.Text = SpinnerFrames[_spinnerIndex];
+
+        // 思考中 → 提取意图更新文字
+        if (_thinkingActive && !string.IsNullOrEmpty(_thinkingBuffer))
+        {
+            ThinkingIntentLabel.Text = ExtractIntent(_thinkingBuffer);
+        }
+        else
+        {
+            ThinkingIntentLabel.Text = _toolProgressText;
+        }
+
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 思考中 — 1 秒无新内容自动折叠
-        if (_thinkingActive && (DateTime.Now - _lastThinkChunk).TotalSeconds > 1)
-        {
-            _thinkingActive = false;
-            _ = _chatRenderer.CollapseThinkingCard();
-        }
-        else if (_thinkingActive && !string.IsNullOrEmpty(_thinkingBuffer))
+        // 思考中 — 实时更新进度（不自动折叠，等 content/工具输出时再叠）
+        if (_thinkingActive && !string.IsNullOrEmpty(_thinkingBuffer))
         {
             _ = _chatRenderer.UpdateThinkingCard(_thinkingBuffer);
         }
@@ -1253,13 +1331,222 @@ public partial class MainWindow : Window
         InputBox.Focus();
     }
 
+    // ═══════════════════════════════════════════
+    //  历史会话
+    // ═══════════════════════════════════════════
+
+    private void HistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (HistoryPopup.IsOpen)
+        {
+            HistoryPopup.IsOpen = false;
+            return;
+        }
+        LoadHistorySessions();
+        HistoryPopup.IsOpen = true;
+    }
+
+    private async void LoadHistorySessions()
+    {
+        var sessions = await _sessionStore.ListSessionsAsync();
+        HistoryListBox.ItemsSource = null;
+
+        if (sessions.Count == 0)
+        {
+            HistoryListBox.Visibility = Visibility.Collapsed;
+            HistoryEmptyLabel.Visibility = Visibility.Visible;
+            return;
+        }
+
+        HistoryListBox.Visibility = Visibility.Visible;
+        HistoryEmptyLabel.Visibility = Visibility.Collapsed;
+
+        HistoryListBox.ItemsSource = sessions;
+        HistoryListBox.DisplayMemberPath = null;
+        HistoryListBox.ItemTemplate = CreateHistoryItemTemplate();
+        HistoryListBox.SelectedIndex = 0;
+        HistoryListBox.Focus();
+    }
+
+    private DataTemplate CreateHistoryItemTemplate()
+    {
+        var template = new DataTemplate();
+
+        // 外层 StackPanel（垂直）
+        var outerStack = new FrameworkElementFactory(typeof(StackPanel));
+        outerStack.SetValue(StackPanel.OrientationProperty, Orientation.Vertical);
+
+        // 第一行：标题 + 时间（水平）
+        var row1 = new FrameworkElementFactory(typeof(DockPanel));
+
+        var titleBlock = new FrameworkElementFactory(typeof(TextBlock));
+        titleBlock.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Title"));
+        titleBlock.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
+        titleBlock.SetValue(TextBlock.FontSizeProperty, 13.0);
+        titleBlock.SetValue(DockPanel.DockProperty, Dock.Left);
+        row1.AppendChild(titleBlock);
+
+        var timeBlock = new FrameworkElementFactory(typeof(TextBlock));
+        timeBlock.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("UpdatedAt")
+        {
+            StringFormat = "MM-dd HH:mm"
+        });
+        timeBlock.SetValue(TextBlock.FontSizeProperty, 10.0);
+        timeBlock.SetValue(TextBlock.ForegroundProperty,
+            new SolidColorBrush(Color.FromRgb(136, 168, 192)));
+        timeBlock.SetValue(TextBlock.MarginProperty, new Thickness(8, 0, 0, 0));
+        timeBlock.SetValue(DockPanel.DockProperty, Dock.Right);
+        row1.AppendChild(timeBlock);
+
+        outerStack.AppendChild(row1);
+
+        // 第二行：条数 · 模型
+        var row2 = new FrameworkElementFactory(typeof(TextBlock));
+        var multiBinding = new System.Windows.Data.MultiBinding();
+        multiBinding.StringFormat = "{0} 条消息 · {1}";
+        multiBinding.Bindings.Add(new System.Windows.Data.Binding("MessageCount"));
+        multiBinding.Bindings.Add(new System.Windows.Data.Binding("Model"));
+        row2.SetBinding(TextBlock.TextProperty, multiBinding);
+        row2.SetValue(TextBlock.FontSizeProperty, 10.0);
+        row2.SetValue(TextBlock.ForegroundProperty,
+            new SolidColorBrush(Color.FromRgb(136, 168, 192)));
+        row2.SetValue(TextBlock.MarginProperty, new Thickness(0, 2, 0, 0));
+        outerStack.AppendChild(row2);
+
+        template.VisualTree = outerStack;
+        return template;
+    }
+
+    private void HistoryListBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            LoadSessionFromHistory();
+        }
+        else if (e.Key == Key.Delete)
+        {
+            e.Handled = true;
+            DeleteSelectedSession();
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            HistoryPopup.IsOpen = false;
+        }
+    }
+
+    private void HistoryListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        LoadSessionFromHistory();
+    }
+
+    private async void LoadSessionFromHistory()
+    {
+        if (HistoryListBox.SelectedItem is not SessionMetadata meta) return;
+
+        var data = await _sessionStore.LoadAsync(meta.Id);
+        if (data == null) return;
+
+        _conversation.DeserializeSession(data.MessagesJson);
+        await _chatRenderer.ClearChat();
+        _permissionManager.ResetSession();
+        _hasUnsavedChanges = false;
+        _commandContext.CurrentSessionId = meta.Id;
+
+        // 历史消息完整渲染：跳过 system 消息（启动时已自动设置），渲染其他角色
+        foreach (var msg in _conversation.Messages)
+        {
+            switch (msg.Role)
+            {
+                case "system":
+                    break;
+
+                case "user" when msg.Content != null:
+                    await _chatRenderer.AppendUserMessage(msg.Content);
+                    break;
+
+                case "assistant":
+                    if (!string.IsNullOrWhiteSpace(msg.ReasoningContent))
+                    {
+                        await _chatRenderer.AppendThinkingCard(msg.ReasoningContent);
+                        await _chatRenderer.CollapseThinkingCard();
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(msg.Content))
+                        await _chatRenderer.AppendAiContent(msg.Content);
+
+                    if (msg.ToolCalls != null)
+                    {
+                        foreach (var tc in msg.ToolCalls)
+                        {
+                            var argSummary = tc.Function.Arguments.Length > 80
+                                ? tc.Function.Arguments[..80] + "..."
+                                : tc.Function.Arguments;
+                            await _chatRenderer.AppendToolCard(tc.Id, tc.Function.Name, argSummary);
+                        }
+                    }
+                    break;
+
+                case "tool" when msg.ToolCallId != null:
+                    var resultText = msg.Content ?? "";
+                    var resultPreview = resultText.Length > 200
+                        ? resultText[..200] + "..."
+                        : resultText;
+                    await _chatRenderer.UpdateToolCardComplete(msg.ToolCallId, true, "", resultPreview);
+                    break;
+            }
+        }
+
+        HistoryPopup.IsOpen = false;
+        AppendSystemMessage($"已加载历史会话: {meta.Title} ({meta.MessageCount} 条消息)");
+    }
+
+    private void NewSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        _conversation.ClearConversation();
+        _permissionManager.ResetSession();
+        _ = _chatRenderer.ClearChat();
+        _hasUnsavedChanges = false;
+        _commandContext.CurrentSessionId = null;
+        HistoryPopup.IsOpen = false;
+        AppendSystemMessage("已创建新对话");
+    }
+
+    private void DeleteSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        DeleteSelectedSession();
+    }
+
+    private async void DeleteSelectedSession()
+    {
+        if (HistoryListBox.SelectedItem is not SessionMetadata meta) return;
+
+        var result = MessageBox.Show(
+            $"确认删除会话 \"{meta.Title}\"？\n此操作不可撤销。",
+            "DeepSeek Code",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        await _sessionStore.DeleteAsync(meta.Id);
+
+        // 如果删除的是当前正在编辑的会话，清空
+        if (_commandContext.CurrentSessionId == meta.Id)
+            _commandContext.CurrentSessionId = null;
+
+        // 刷新列表
+        LoadHistorySessions();
+    }
+
     private void FinishStreaming()
     {
         _isStreaming = false;
         StopStatusSpinner();
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
         SetInputEnabled(true);
-        StopButton.Visibility = Visibility.Collapsed;
         _currentCancellation = null;
         InputBox.Focus();
     }
@@ -1293,5 +1580,67 @@ public partial class MainWindow : Window
         {
             StatusCacheLabel.Text = "";
         }
+    }
+
+    // ═══════════════════════════════════════════
+    //  窗口关闭
+    // ═══════════════════════════════════════════
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (_hasUnsavedChanges && _conversation.Messages.Count > 1)
+        {
+            var result = MessageBox.Show(
+                "当前对话尚未保存，是否在退出前保存？",
+                "DeepSeek Code",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question,
+                MessageBoxResult.Yes);
+
+            if (result == MessageBoxResult.Cancel)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            if (result == MessageBoxResult.Yes)
+            {
+                // 快速保存：覆盖已加载的会话或新建
+                var sessionId = _commandContext.CurrentSessionId ?? Guid.NewGuid().ToString("N")[..8];
+                var title = GenerateSessionTitle();
+                var metadata = new SessionMetadata
+                {
+                    Id = sessionId,
+                    Title = title,
+                    MessageCount = _conversation.Messages.Count,
+                    Model = _configService.Config.Model
+                };
+                _commandContext.CurrentSessionId = sessionId;
+                var messagesJson = _conversation.SerializeSession();
+                _sessionStore.SaveAsync(metadata, messagesJson).GetAwaiter().GetResult();
+            }
+        }
+
+        base.OnClosing(e);
+    }
+
+    /// <summary>从对话内容自动生成会话标题</summary>
+    private string GenerateSessionTitle()
+    {
+        var firstUserMsg = _conversation.Messages
+            .FirstOrDefault(m => m.Role == "user")?.Content;
+
+        if (string.IsNullOrWhiteSpace(firstUserMsg))
+        {
+            var workspaceName = Path.GetFileName(_workspaceService.WorkspacePath.TrimEnd(Path.DirectorySeparatorChar));
+            return $"{workspaceName}_{DateTime.Now:MMdd_HHmm}";
+        }
+
+        var title = firstUserMsg.Length > 30
+            ? firstUserMsg[..30] + "..."
+            : firstUserMsg;
+
+        title = System.Text.RegularExpressions.Regex.Replace(title, @"\s+", " ").Trim();
+        return title;
     }
 }

@@ -58,8 +58,8 @@
                     <ComboBox x:Name="EffortCombo" Background="White" Foreground="{StaticResource PrimaryDarkBrush}"
                               BorderThickness="0" Height="32" FontSize="14"
                               SelectionChanged="OnSettingChanged">
-                        <ComboBoxItem Content="High（默认）" Tag="high"/>
-                        <ComboBoxItem Content="Max（最高质量，较慢）" Tag="max"/>
+                        <ComboBoxItem Content="High" Tag="high"/>
+                        <ComboBoxItem Content="Max（默认）" Tag="max"/>
                     </ComboBox>
                     <TextBlock Text="Agent 场景（如 Claude Code）自动使用 Max 级别" Foreground="{StaticResource PrimaryLightBrush}" FontSize="11" Margin="0,4,0,16"/>
 
