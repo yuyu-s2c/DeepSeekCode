@@ -125,8 +125,8 @@ public class ChatRenderer
 <meta charset=""UTF-8"">
 <meta name=""viewport"" content=""width=device-width,initial-scale=1"">
 <script src=""https://cdn.jsdelivr.net/npm/marked@12/marked.min.js""></script>
-<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css"">
-<script src=""https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js""></script>
+<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css"">
+<script src=""https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js""></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;background:#fff;padding:12px 16px 80px;line-height:1.7}
@@ -139,14 +139,8 @@ body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;backg
 .ai-content h1,.ai-content h2,.ai-content h3,.ai-content h4{font-weight:700;margin:12px 0 4px;color:#1a2a38}
 .ai-content h1{font-size:20px}.ai-content h2{font-size:17px}.ai-content h3{font-size:15px}
 .ai-content code{font-family:'Cascadia Code',Consolas,monospace;font-size:13px;background:#f2f7fb;color:#c04040;padding:1px 4px;border-radius:3px}
-.ai-content pre{margin:8px 0;border-radius:8px;overflow:hidden;border:1px solid #2a4050;background:#0d1b2a}
-.ai-content .code-header{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:#122231;border-bottom:1px solid #1e3550;font-size:11px;color:#6088a8;font-family:'Cascadia Code',Consolas,monospace}
-.ai-content .code-header .lang{font-weight:600;color:#80b0d0}
-.ai-content .code-header .copy-btn{cursor:pointer;background:none;border:1px solid #2a4a6a;color:#6088a8;padding:2px 8px;border-radius:4px;font-size:10px;font-family:inherit}
-.ai-content .code-header .copy-btn:hover{background:#1a3550;color:#90c0e0}
-.ai-content .code-body{padding:12px;overflow-x:auto}
-.ai-content .code-body pre{margin:0;border:none;border-radius:0;background:none}
-.ai-content .code-body code{background:none;color:#c0d0e0;padding:0;font-size:13px;line-height:1.6}
+.ai-content pre{background:#1a2a3a;border:1px solid #2a4050;border-radius:6px;padding:12px;overflow-x:auto;margin:8px 0}
+.ai-content pre code{background:none;color:#a0c0d0;padding:0;font-size:13px}
 .ai-content blockquote{border-left:3px solid #38a0e0;background:#f2f7fb;padding:8px 12px;margin:6px 0;color:#4a6070}
 .ai-content ul,.ai-content ol{padding-left:20px;margin:4px 0}
 .ai-content li{margin:2px 0}
@@ -175,24 +169,7 @@ body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;backg
 </head>
 <body><div id=""chat""></div></body>
 <script>
-marked.setOptions({breaks:true,gfm:true});
-
-let aiBlock=null,thinkBlock=null;
-
-function scrollToBottom(){window.scrollTo(0,document.body.scrollHeight)}
-
-function buildCodeBlock(code,lang){
-  var langLabel=lang||'plaintext';
-  var highlighted=lang&&hljs.getLanguage(lang)?hljs.highlight(code,{language:lang}).value:hljs.highlightAuto(code).value;
-  return `<div class=""code-header""><span class=""lang"">${langLabel}</span><button class=""copy-btn"" onclick=""copyCode(this)"">复制</button></div><div class=""code-body""><pre><code>${highlighted}</code></pre></div>`;
-}
-
-function copyCode(btn){
-  var code=btn.parentElement.nextElementSibling.querySelector('code').innerText;
-  navigator.clipboard.writeText(code).then(function(){btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500)});
-}
-
-marked.use({renderer:{code:function(code,infostring,escaped){return`<pre>${buildCodeBlock(code,infostring||null)}</pre>`}}});
+marked.setOptions({breaks:true,gfm:true,highlight:function(code,lang){return hljs.highlightAuto(code,lang?[lang]:[]).value}});
 
 let aiBlock=null,thinkBlock=null;
 
