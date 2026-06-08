@@ -139,8 +139,8 @@ body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;backg
 .ai-content h1,.ai-content h2,.ai-content h3,.ai-content h4{font-weight:700;margin:12px 0 4px;color:#1a2a38}
 .ai-content h1{font-size:20px}.ai-content h2{font-size:17px}.ai-content h3{font-size:15px}
 .ai-content code{font-family:'Cascadia Code',Consolas,monospace;font-size:13px;background:#f2f7fb;color:#c04040;padding:1px 4px;border-radius:3px}
-.ai-content pre{background:#1a2a3a;border:1px solid #2a4050;border-radius:6px;padding:12px;overflow-x:auto;margin:8px 0}
-.ai-content pre code{background:none;color:#a0c0d0;padding:0;font-size:13px}
+.ai-content pre{overflow-x:auto;margin:8px 0}
+.ai-content pre code{font-size:13px}
 .ai-content blockquote{border-left:3px solid #38a0e0;background:#f2f7fb;padding:8px 12px;margin:6px 0;color:#4a6070}
 .ai-content ul,.ai-content ol{padding-left:20px;margin:4px 0}
 .ai-content li{margin:2px 0}
