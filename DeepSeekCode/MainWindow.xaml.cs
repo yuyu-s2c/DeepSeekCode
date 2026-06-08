@@ -7,13 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
 using DeepSeekCode.Commands;
-using DeepSeekCode.Diff;
 using DeepSeekCode.Models;
 using DeepSeekCode.Services;
 using DeepSeekCode.Tools;
@@ -38,29 +36,20 @@ public partial class MainWindow : Window
     private readonly Skills.SkillEngine _skillEngine;
     private readonly StatusViewModel _statusVm;
     private readonly TimingService _timingService;
+    private readonly ChatRenderer _chatRenderer;
 
     private CancellationTokenSource? _currentCancellation;
     private bool _isStreaming;
     private string _thinkingBuffer = "";
     private readonly StringBuilder _aiStreamBuffer = new();  // 流式累积全文，逐块实时渲染
-    private Section? _aiStreamSection;  // 标记 AI 内容区，每次重新渲染时替换
 
     // 输入历史
     private readonly List<string> _inputHistory = new();
     private int _historyIndex = -1;
     private string _savedInput = "";
 
-    // 工具卡片渲染
-    private record ToolCardInfo(
-        string ToolCallId,
-        string ToolName,
-        Border CardBorder,
-        TextBlock StatusLabel,
-        TextBlock TimeLabel,
-        StackPanel ContentPanel
-    );
-
-    private readonly Dictionary<string, ToolCardInfo> _activeToolCards = new();
+    // 工具卡片追踪（仅用于耗时更新）
+    private readonly HashSet<string> _activeToolCards = new();
 
     // 进度指示器
     private DispatcherTimer? _spinnerTimer;
@@ -90,12 +79,9 @@ public partial class MainWindow : Window
 
         Title = $"DeepSeek Code - {_workspaceService.WorkspaceName}";
         WorkspaceLabel.Text = _workspaceService.WorkspacePath;
-        ChatViewer.Document = new FlowDocument
-        {
-            FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = 14,
-            Foreground = (Brush)Application.Current.Resources["PrimaryDarkBrush"]
-        };
+
+        _chatRenderer = new ChatRenderer(ChatViewer);
+        _ = _chatRenderer.InitializeAsync(); // fire-and-forget，WebView2 初始化需要一点时间
 
         SubscribeToEvents();
         SetInitialSystemPrompt();
@@ -191,13 +177,8 @@ public partial class MainWindow : Window
 
     private void InitializeChat()
     {
-        var doc = (FlowDocument)ChatViewer.Document;
-        doc.Blocks.Clear();
-        doc.Blocks.Add(new Paragraph(new Run("DeepSeek Code 已就绪。输入 /help 获取帮助。"))
-        {
-            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-            FontSize = 11
-        });
+        _ = _chatRenderer.ClearChat();
+        _ = _chatRenderer.AppendSystemMessage("DeepSeek Code 已就绪。输入 /help 获取帮助。");
     }
 
     // ═══════════════════════════════════════════
@@ -313,9 +294,8 @@ public partial class MainWindow : Window
         StartStatusSpinner("AI 正在思考…");
         StopButton.Visibility = Visibility.Visible;
         _thinkingBuffer = "";
-        _thinkCard = null;
-        _thinkContent = null;
-        _thinkHeader = null;
+        _thinkingActive = false;
+        _lastThinkChunk = DateTime.MinValue;
 
         // 1. 先尝试 Slash 命令
         if (text.StartsWith('/'))
@@ -327,11 +307,7 @@ public partial class MainWindow : Window
                     AppendSystemMessage(result.DisplayMessage);
                 if (result.RefreshUI)
                 {
-                    ChatViewer.Document = new FlowDocument
-                    {
-                        FontFamily = new FontFamily("Microsoft YaHei"),
-                        FontSize = 14
-                    };
+                    _ = _chatRenderer.ClearChat();
                     InitializeChat();
                 }
                 FinishStreaming();
@@ -375,11 +351,7 @@ public partial class MainWindow : Window
         {
             // 每次 AI 迭代独立一张思考卡片
             _thinkingBuffer = "";
-            _thinkCard = null;
-            _thinkContent = null;
-            _thinkHeader = null;
-            _thinkCollapsed = false;
-            _thinkDone = false;
+            _thinkingActive = false;
             _lastThinkChunk = DateTime.MinValue;
 
             // 上下文裁剪
@@ -451,17 +423,7 @@ public partial class MainWindow : Window
             FlushCurrentAiParagraph();
 
             // 本次迭代思考流式完成 → 折叠卡片
-            if (_thinkCard != null && !_thinkDone)
-            {
-                _thinkDone = true;
-                _thinkCollapsed = true;
-                if (_thinkContent != null)
-                    _thinkContent.Visibility = Visibility.Collapsed;
-                var duration = DateTime.Now - _thinkStartTime;
-                if (_thinkHeader != null)
-                    _thinkHeader.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）";
-                ChatViewer.UpdateLayout();
-            }
+            _ = _chatRenderer.CollapseThinkingCard();
 
             _eventBus.Publish(new StreamCompletedEvent
             {
@@ -582,12 +544,6 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             UpdateToolCardComplete(tc.Id, success, elapsed, result);
-
-            if (tc.Function.Name == "edit_file")
-                AppendDiffToCard(tc.Id, args, null, false);
-            else if (tc.Function.Name == "write_file")
-                AppendDiffToCard(tc.Id, args, oldFileContent, true);
-
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
         });
 
@@ -688,81 +644,23 @@ public partial class MainWindow : Window
     // ═══════════════════════════════════════════
 
     /// <summary>
-    /// 用户消息 — 终端风格：▸ 标记 + 纯文本左对齐，保留右键菜单
+    /// 用户消息 — 终端风格：▸ 标记 + 纯文本左对齐
     /// </summary>
-    private void AppendUserMessage(string content)
+    private async void AppendUserMessage(string content)
     {
-        var doc = (FlowDocument)ChatViewer.Document;
-
-        // 用户标记行
-        doc.Blocks.Add(new Paragraph(new Run("▸ 你")
-        {
-            Foreground = (Brush)Application.Current.Resources["PrimaryBlueBrush"],
-            FontWeight = FontWeights.SemiBold
-        })
-        {
-            FontSize = 11,
-            Margin = new Thickness(0, 10, 0, 2)
-        });
-
-        // 用户内容 — 可右键复制/重发
-        var contentPara = new Paragraph(new Run(content)
-        {
-            Foreground = (Brush)Application.Current.Resources["PrimaryDarkBrush"]
-        })
-        {
-            FontSize = 13,
-            Margin = new Thickness(0, 0, 0, 4)
-        };
-
-        // 右键菜单（重新发送）
-        var resendMenu = new ContextMenu();
-        var resendItem = new MenuItem { Header = "重新发送" };
-        resendItem.Click += (_, _) =>
-        {
-            InputBox.Text = content;
-            InputBox.CaretIndex = content.Length;
-            InputBox.Focus();
-        };
-        resendMenu.Items.Add(resendItem);
-        contentPara.ContextMenu = resendMenu;
-
-        doc.Blocks.Add(contentPara);
-
+        await _chatRenderer.AppendUserMessage(content);
         _aiStreamBuffer.Clear();
-        _aiStreamSection = null;
-        ScrollChatToEnd();
     }
 
     private void AppendStreamText(string text)
     {
         _aiStreamBuffer.Append(text);
-
-        var doc = (FlowDocument)ChatViewer.Document;
-
-        // 移除旧的 AI 内容区
-        if (_aiStreamSection != null)
-        {
-            doc.Blocks.Remove(_aiStreamSection);
-        }
-
-        // 实时渲染全文为 Markdown
-        var rendered = Markdown.MarkdownRenderer.Render(_aiStreamBuffer.ToString());
-        _aiStreamSection = new Section();
-        while (rendered.Blocks.Count > 0)
-        {
-            var block = rendered.Blocks.FirstBlock;
-            rendered.Blocks.Remove(block);
-            _aiStreamSection.Blocks.Add(block);
-        }
-        doc.Blocks.Add(_aiStreamSection);
-
-        ScrollChatToEnd();
+        _ = _chatRenderer.UpdateAiContent(_aiStreamBuffer.ToString());
     }
 
     private void FlushCurrentAiParagraph()
     {
-        // 实时渲染模式，无需 flush — 内容已在 AppendStreamText 中逐块渲染
+        // Markdown 已在 AppendStreamText 中实时渲染，无需 flush
     }
 
     /// <summary>
@@ -773,54 +671,32 @@ public partial class MainWindow : Window
         foreach (var tc in toolCalls)
         {
             _timingService.StartTool(tc.Id);
+            _activeToolCards.Add(tc.Id);
             var summary = GetToolParamSummary(tc.Function.Name,
                 TryParseArguments(tc.Function.Arguments));
             CreateToolCard(tc.Id, tc.Function.Name, summary);
         }
-        ScrollChatToEnd();
+    }
+
+    private void CreateToolCard(string toolCallId, string toolName, string paramSummary)
+    {
+        _ = _chatRenderer.AppendToolCard(toolCallId, toolName, paramSummary);
+    }
+
+    private async void UpdateToolCardComplete(string toolCallId, bool success, TimeSpan elapsed, string? resultText)
+    {
+        var elapsedStr = TimingService.FormatElapsed(elapsed);
+        var display = resultText?.Length > 300 ? resultText[..300] + "\n...（共 N 行）" : resultText ?? "";
+        await _chatRenderer.UpdateToolCardComplete(toolCallId, success, elapsedStr, display);
+        _activeToolCards.Remove(toolCallId);
     }
 
     /// <summary>
     /// 系统消息 — 最淡的颜色，最小字号
     /// </summary>
-    private void AppendSystemMessage(string content)
+    private async void AppendSystemMessage(string content)
     {
-        ((FlowDocument)ChatViewer.Document).Blocks.Add(
-            new Paragraph(new Run(content))
-            {
-                Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-                FontSize = 10,
-                Margin = new Thickness(0, 3, 0, 3)
-            });
-        ScrollChatToEnd();
-    }
-
-    private void RenderEditDiff(Dictionary<string, object?> args)
-    {
-        var filePath = args.TryGetValue("filePath", out var fp) ? fp?.ToString() : null;
-        var oldStr = args.TryGetValue("oldString", out var os) ? os?.ToString() : null;
-        var newStr = args.TryGetValue("newString", out var ns) ? ns?.ToString() : null;
-
-        if (string.IsNullOrEmpty(filePath) || string.IsNullOrEmpty(oldStr) || string.IsNullOrEmpty(newStr))
-            return;
-
-        var diffSection = DiffRenderer.RenderDiff(oldStr, newStr, filePath);
-        ((FlowDocument)ChatViewer.Document).Blocks.Add(diffSection);
-        ScrollChatToEnd();
-    }
-
-    private void RenderWriteDiff(Dictionary<string, object?> args, string? oldContent)
-    {
-        var filePath = args.TryGetValue("filePath", out var fp) ? fp?.ToString() : null;
-        var newContent = args.TryGetValue("content", out var ct) ? ct?.ToString() : null;
-
-        if (string.IsNullOrEmpty(filePath) || string.IsNullOrEmpty(newContent))
-            return;
-
-        var old = oldContent ?? "";
-        var diffSection = DiffRenderer.RenderDiff(old, newContent, filePath);
-        ((FlowDocument)ChatViewer.Document).Blocks.Add(diffSection);
-        ScrollChatToEnd();
+        await _chatRenderer.AppendSystemMessage(content);
     }
 
     // ═══════════════════════════════════════════
@@ -1058,80 +934,25 @@ public partial class MainWindow : Window
         _subagentNeedsRebuild = false;
     }
 
-    /// <summary>当前流式迭代的思考卡片（每次迭代创建独立卡片）</summary>
-    private BlockUIContainer? _thinkCard;
-    private TextBlock? _thinkContent;
-    private TextBlock? _thinkHeader;
-    private bool _thinkCollapsed;
-    private bool _thinkDone;  // 思考完成，不再自动折叠
+    /// <summary>当前是否正在显示思考卡片</summary>
+    private bool _thinkingActive;
     private DateTime _lastThinkChunk = DateTime.MinValue;
-    private DateTime _thinkStartTime;
 
     private void UpdateThinkingPanel()
     {
         if (string.IsNullOrWhiteSpace(_thinkingBuffer))
             return;
 
-        var doc = (FlowDocument)ChatViewer.Document;
-
-        // 本迭代首次有思考内容 → 创建卡片（仅标题，不显示内容）
-        if (_thinkCard == null)
+        if (!_thinkingActive)
         {
-            _thinkStartTime = DateTime.Now;
-
-            var border = new Border
-            {
-                Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
-                BorderBrush = (Brush)Application.Current.Resources["BorderCardBrush"],
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(10, 6, 10, 6),
-                Margin = new Thickness(0, 6, 0, 4)
-            };
-
-            var stack = new StackPanel();
-
-            _thinkHeader = new TextBlock
-            {
-                FontSize = 10,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
-                Cursor = Cursors.Hand,
-                Text = $"{SpinnerFrames[0]} 思考中..."
-            };
-            _thinkHeader.MouseLeftButtonDown += (_, _) =>
-            {
-                _thinkCollapsed = !_thinkCollapsed;
-                if (_thinkContent != null)
-                    _thinkContent.Visibility = _thinkCollapsed ? Visibility.Collapsed : Visibility.Visible;
-                var duration = DateTime.Now - _thinkStartTime;
-                _thinkHeader!.Text = _thinkCollapsed
-                    ? $"▶ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）"
-                    : $"▼ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）";
-            };
-            stack.Children.Add(_thinkHeader);
-
-            _thinkContent = new TextBlock
-            {
-                FontSize = 10,
-                Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 4, 0, 0),
-                Visibility = Visibility.Collapsed  // 默认隐藏
-            };
-            stack.Children.Add(_thinkContent);
-
-            border.Child = stack;
-            _thinkCard = new BlockUIContainer(border);
-            doc.Blocks.Add(_thinkCard);
-            // 不设置 _thinkCollapsed — 由 SpinnerTimer_Tick 统一控制
+            _ = _chatRenderer.AppendThinkingCard(_thinkingBuffer);
+            _thinkingActive = true;
         }
-
-        // 流式期间内容写入但保持隐藏，标题由 SpinnerTimer_Tick 统一更新
-        _thinkContent!.Text = _thinkingBuffer;
+        else
+        {
+            _ = _chatRenderer.UpdateThinkingCard(_thinkingBuffer);
+        }
         _lastThinkChunk = DateTime.Now;
-
-        ScrollChatToEnd();
     }
 
     // ═══════════════════════════════════════════
@@ -1139,138 +960,33 @@ public partial class MainWindow : Window
     // ═══════════════════════════════════════════
 
     /// <summary>
-    /// 在对话流中插入内联权限确认卡片
+    /// 权限确认对话框
     /// </summary>
     private Task<bool> ShowInlinePermissionAsync(string toolName, string command)
     {
-        var tcs = new TaskCompletionSource<bool>();
+        var displayCmd = command ?? toolName;
+        if (displayCmd.Length > 100) displayCmd = displayCmd[..100] + "...";
 
-        Dispatcher.Invoke(() =>
-        {
-            var doc = (FlowDocument)ChatViewer.Document;
+        var result = MessageBox.Show(
+            $"允许执行 {toolName}: {displayCmd} 吗？",
+            "⚠ 权限确认",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
 
-            var cardBorder = new Border
-            {
-                BorderBrush = (Brush)Application.Current.Resources["WarningBorderBrush"],
-                BorderThickness = new Thickness(2, 0, 0, 0),
-                Background = (Brush)Application.Current.Resources["WarningBgBrush"],
-                CornerRadius = new CornerRadius(0, 4, 4, 0),
-                Padding = new Thickness(12, 10, 12, 10),
-                Margin = new Thickness(0, 6, 0, 6)
-            };
+        AppendSystemMessage(result == MessageBoxResult.Yes
+            ? $"✔ 已允许: {toolName}"
+            : $"✕ 已拒绝: {toolName}");
 
-            var stack = new StackPanel();
-
-            stack.Children.Add(new TextBlock
-            {
-                Text = "⚠ 权限确认",
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.Resources["WarningOrangeBrush"],
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-
-            var displayCmd = command ?? toolName;
-            if (displayCmd.Length > 100) displayCmd = displayCmd[..100] + "...";
-
-            stack.Children.Add(new TextBlock
-            {
-                Text = $"允许执行 {toolName}: {displayCmd} 吗？",
-                FontSize = 11,
-                Foreground = (Brush)Application.Current.Resources["PrimaryMediumBrush"],
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8)
-            });
-
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal };
-
-            var allowBtn = new Button
-            {
-                Content = "允许",
-                Width = 70, Height = 28,
-                Background = (Brush)Application.Current.Resources["PrimaryBlueBrush"],
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                FontSize = 11,
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            allowBtn.Click += (_, _) =>
-            {
-                stack.Children.Clear();
-                stack.Children.Add(new TextBlock
-                {
-                    Text = $"✔ 已允许: {toolName}",
-                    FontSize = 11,
-                    Foreground = (Brush)Application.Current.Resources["SuccessGreenBrush"]
-                });
-                tcs.TrySetResult(true);
-            };
-
-            var denyBtn = new Button
-            {
-                Content = "拒绝",
-                Width = 70, Height = 28,
-                Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
-                Foreground = (Brush)Application.Current.Resources["PrimaryMediumBrush"],
-                BorderBrush = (Brush)Application.Current.Resources["BorderCardBrush"],
-                BorderThickness = new Thickness(1),
-                FontSize = 11,
-                Cursor = Cursors.Hand
-            };
-            denyBtn.Click += (_, _) =>
-            {
-                stack.Children.Clear();
-                stack.Children.Add(new TextBlock
-                {
-                    Text = $"✕ 已拒绝: {toolName}",
-                    FontSize = 11,
-                    Foreground = (Brush)Application.Current.Resources["ErrorRedBrush"]
-                });
-                tcs.TrySetResult(false);
-            };
-
-            btnPanel.Children.Add(allowBtn);
-            btnPanel.Children.Add(denyBtn);
-            stack.Children.Add(btnPanel);
-
-            cardBorder.Child = stack;
-            doc.Blocks.Add(new BlockUIContainer(cardBorder));
-            ScrollChatToEnd();
-        });
-
-        return tcs.Task;
+        return Task.FromResult(result == MessageBoxResult.Yes);
     }
 
     // ═══════════════════════════════════════════
     //  辅助方法
     // ═══════════════════════════════════════════
 
-    private ScrollViewer? _chatScrollViewer;
-
     private void ScrollChatToEnd()
     {
-        _chatScrollViewer ??= FindVisualChild<ScrollViewer>(ChatViewer);
-        _chatScrollViewer?.ScrollToEnd();
-    }
-
-    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T found)
-                return found;
-            var result = FindVisualChild<T>(child);
-            if (result != null)
-                return result;
-        }
-        return null;
-    }
-
-    private void ScrollThinkingToEnd()
-    {
-        // Thinking 内容现在内联在 ChatViewer 中，跟随主滚动
+        // WebView2 在每个 append 调用中通过 JavaScript scrollToBottom() 自动滚动
     }
 
     private void SetInputEnabled(bool enabled)
@@ -1333,226 +1049,19 @@ public partial class MainWindow : Window
         return text.Length <= maxLen ? text : text[..maxLen] + "...";
     }
 
-    /// <summary>
-    /// 创建一个工具调用卡片（初始 spinner 状态），插入对话区并返回引用。
-    /// </summary>
-    private ToolCardInfo CreateToolCard(string toolCallId, string toolName, string paramSummary)
-    {
-        var doc = (FlowDocument)ChatViewer.Document;
-
-        // 状态标签
-        var statusLabel = new TextBlock
-        {
-            Text = GetToolIcon(toolName),
-            FontSize = 10,
-            Margin = new Thickness(0, 0, 6, 0)
-        };
-
-        // 耗时标签
-        var timeLabel = new TextBlock
-        {
-            FontSize = 10,
-            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-            Text = "⏱ ..."
-        };
-
-        // 内容面板
-        var contentPanel = new StackPanel();
-
-        // 卡片边框
-        var cardBorder = new Border
-        {
-            BorderBrush = (Brush)Application.Current.Resources["RunningBorderBrush"],
-            BorderThickness = new Thickness(2, 0, 0, 0),
-            Background = (Brush)Application.Current.Resources["SurfaceCardBrush"],
-            CornerRadius = new CornerRadius(0, 4, 4, 0),
-            Padding = new Thickness(10, 8, 10, 8),
-            Margin = new Thickness(0, 4, 0, 4)
-        };
-
-        // 头部行
-        var headerPanel = new DockPanel { Margin = new Thickness(0, 0, 0, 0) };
-
-        var nameLabel = new TextBlock
-        {
-            Text = toolName,
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)Application.Current.Resources["RunningBlueBrush"],
-            Margin = new Thickness(0, 0, 8, 0)
-        };
-        DockPanel.SetDock(nameLabel, Dock.Left);
-
-        var rightPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        rightPanel.Children.Add(timeLabel);
-        DockPanel.SetDock(rightPanel, Dock.Right);
-
-        var paramLabel = new TextBlock
-        {
-            Text = string.IsNullOrEmpty(paramSummary) ? "" : paramSummary,
-            FontSize = 10,
-            Foreground = (Brush)Application.Current.Resources["PrimaryLightBrush"],
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-
-        headerPanel.Children.Add(statusLabel);
-        headerPanel.Children.Add(nameLabel);
-        headerPanel.Children.Add(rightPanel);
-        headerPanel.Children.Add(paramLabel);
-
-        var outerStack = new StackPanel();
-        outerStack.Children.Add(headerPanel);
-        outerStack.Children.Add(contentPanel);
-
-        cardBorder.Child = outerStack;
-
-        _aiStreamSection = null;
-        doc.Blocks.Add(new BlockUIContainer(cardBorder));
-
-        var cardInfo = new ToolCardInfo(toolCallId, toolName, cardBorder, statusLabel, timeLabel, contentPanel);
-        _activeToolCards[toolCallId] = cardInfo;
-        return cardInfo;
-    }
-
-    /// <summary>
-    /// 将工具卡片从 spinner 状态更新为完成/失败状态
-    /// </summary>
-    private void UpdateToolCardComplete(string toolCallId, bool success, TimeSpan elapsed, string? resultText)
-    {
-        if (!_activeToolCards.TryGetValue(toolCallId, out var card))
-            return;
-
-        if (success)
-        {
-            card.StatusLabel.Text = "✔";
-            card.CardBorder.BorderBrush = (Brush)Application.Current.Resources["SuccessBorderBrush"];
-        }
-        else
-        {
-            card.StatusLabel.Text = "✕";
-            card.CardBorder.BorderBrush = (Brush)Application.Current.Resources["ErrorBorderBrush"];
-        }
-
-        var timeColor = GetTimeColor(elapsed);
-        card.TimeLabel.Text = $"⏱ {TimingService.FormatElapsed(elapsed)}";
-        card.TimeLabel.Foreground = timeColor;
-
-        if (!string.IsNullOrEmpty(resultText))
-        {
-            var display = resultText.Length > 300
-                ? $"{resultText[..300]}\n...（共 {resultText.Split('\n').Length} 行, {resultText.Length} 字符）"
-                : resultText;
-            card.ContentPanel.Children.Add(new TextBlock
-            {
-                Text = display,
-                FontSize = 11,
-                Foreground = (Brush)Application.Current.Resources["PrimaryMediumBrush"],
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 6, 0, 0),
-                FontFamily = new FontFamily("Microsoft YaHei")
-            });
-        }
-
-        _activeToolCards.Remove(toolCallId);
-    }
-
-    private static Brush GetTimeColor(TimeSpan elapsed)
-    {
-        if (elapsed.TotalSeconds >= 10)
-            return (Brush)Application.Current.Resources["ErrorRedBrush"];
-        if (elapsed.TotalSeconds >= 1)
-            return (Brush)Application.Current.Resources["WarningOrangeBrush"];
-        return (Brush)Application.Current.Resources["PrimaryLightBrush"];
-    }
-
-    /// <summary>
-    /// 将 diff 结果追加到工具卡片内容区
-    /// </summary>
-    private void AppendDiffToCard(string toolCallId, Dictionary<string, object?> args,
-        string? capturedOldContent, bool isWrite)
-    {
-        var filePath = args.TryGetValue("filePath", out var fp) ? fp?.ToString() : null;
-        var oldStr = args.TryGetValue("oldString", out var os) ? os?.ToString() : null;
-        var newStr = args.TryGetValue("newString", out var ns) ? ns?.ToString() : null;
-        var newContent = args.TryGetValue("content", out var ct) ? ct?.ToString() : null;
-
-        if (string.IsNullOrEmpty(filePath)) return;
-
-        string oldText, newText;
-        if (isWrite)
-        {
-            oldText = capturedOldContent ?? "";
-            newText = newContent ?? "";
-        }
-        else
-        {
-            oldText = oldStr ?? "";
-            newText = newStr ?? "";
-        }
-
-        if (!_activeToolCards.TryGetValue(toolCallId, out var card))
-        {
-            // 卡片已被移除，回退到独立渲染
-            if (isWrite)
-                RenderWriteDiff(args, capturedOldContent);
-            else
-                RenderEditDiff(args);
-            return;
-        }
-
-        var diffSection = Diff.DiffRenderer.RenderDiff(oldText, newText, filePath);
-
-        foreach (Block block in diffSection.Blocks)
-        {
-            if (block is Paragraph para)
-            {
-                var diffText = new TextBlock
-                {
-                    FontSize = 10,
-                    FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
-                    TextWrapping = TextWrapping.NoWrap,
-                    Margin = new Thickness(0, 6, 0, 0),
-                    Background = para.Background,
-                    Foreground = para.Foreground
-                };
-
-                foreach (Inline inline in para.Inlines)
-                {
-                    if (inline is Run run)
-                    {
-                        diffText.Inlines.Add(new Run(run.Text)
-                        {
-                            Foreground = run.Foreground,
-                            Background = run.Background
-                        });
-                    }
-                }
-                card.ContentPanel.Children.Add(diffText);
-            }
-        }
-    }
-
     // ═══════════════════════════════════════════
     //  右键菜单
     // ═══════════════════════════════════════════
 
     private void CopySelection_Click(object sender, RoutedEventArgs e)
     {
-        var selection = ChatViewer.Selection;
-        if (selection != null && !selection.IsEmpty)
-        {
-            Clipboard.SetText(selection.Text);
-        }
+        // WebView2 自带文本选择的右键菜单
     }
 
     private void ClearScreen()
     {
         _conversation.ClearConversation();
-        ChatViewer.Document = new FlowDocument
-        {
-            FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = 14
-        };
+        _ = _chatRenderer.ClearChat();
         InitializeChat();
     }
 
@@ -1596,36 +1105,22 @@ public partial class MainWindow : Window
         StatusIndicatorLabel.Text = $"{SpinnerFrames[_spinnerIndex]} {_toolProgressText}";
         StatusTimingLabel.Text = _timingService.GetRoundSummary();
 
-        // 思考中 — 仅显示标题动画，1 秒无新内容自动折叠（仅一次）
-        if (_thinkHeader != null && _thinkCard != null)
+        // 思考中 — 1 秒无新内容自动折叠
+        if (_thinkingActive && (DateTime.Now - _lastThinkChunk).TotalSeconds > 1)
         {
-            if (_thinkDone)
-            {
-                // 已完成，保持当前状态（用户可自由展开/收起）
-            }
-            else if ((DateTime.Now - _lastThinkChunk).TotalSeconds > 1)
-            {
-                // 超 1 秒无新思考 → 自动折叠，标记完成
-                _thinkDone = true;
-                _thinkCollapsed = true;
-                if (_thinkContent != null)
-                    _thinkContent.Visibility = Visibility.Collapsed;
-                var duration = DateTime.Now - _thinkStartTime;
-                _thinkHeader.Text = $"▶ 思考过程（{_thinkingBuffer.Length} 字，用时 {duration.TotalSeconds:F1}s）";
-            }
-            else
-            {
-                // 仍在流式接收 → 显示动画
-                _thinkHeader.Text = $"{SpinnerFrames[_spinnerIndex]} 思考中...";
-            }
+            _thinkingActive = false;
+            _ = _chatRenderer.CollapseThinkingCard();
+        }
+        else if (_thinkingActive && !string.IsNullOrEmpty(_thinkingBuffer))
+        {
+            _ = _chatRenderer.UpdateThinkingCard(_thinkingBuffer);
         }
 
-        // 工具卡片 — spinner 动画 + 实时耗时
-        foreach (var (_, card) in _activeToolCards)
+        // 工具卡片 — 实时耗时
+        foreach (var toolId in _activeToolCards)
         {
-            var elapsed = _timingService.GetElapsed(card.ToolCallId);
-            card.TimeLabel.Text = $"⏱ 运行中 · {TimingService.FormatElapsed(elapsed)}";
-            card.StatusLabel.Text = SpinnerFrames[_spinnerIndex];
+            var elapsed = _timingService.GetElapsed(toolId);
+            _ = _chatRenderer.UpdateToolCardElapsed(toolId, TimingService.FormatElapsed(elapsed));
         }
 
         // 子代理面板 spinner 联动刷新

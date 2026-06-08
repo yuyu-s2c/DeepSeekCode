@@ -19,6 +19,7 @@
         <SolidColorBrush x:Key="SurfaceWhiteBrush" Color="#ffffff"/>
         <SolidColorBrush x:Key="SurfaceTintBrush" Color="#f2f7fb"/>
         <SolidColorBrush x:Key="SurfaceCardBrush" Color="#f5f8fc"/>
+        <SolidColorBrush x:Key="ProgressBgBrush" Color="#e0ecf4"/>
 
         <!-- ═══ 语义色 ═══ -->
         <Color x:Key="SuccessGreen">#58a058</Color>
