@@ -42,7 +42,8 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _currentCancellation;
     private bool _isStreaming;
     private string _thinkingBuffer = "";
-    private Paragraph? _currentAiParagraph;
+    private readonly StringBuilder _aiStreamBuffer = new();  // 流式累积全文，逐块实时渲染
+    private Section? _aiStreamSection;  // 标记 AI 内容区，每次重新渲染时替换
 
     // 输入历史
     private readonly List<string> _inputHistory = new();
@@ -728,64 +729,40 @@ public partial class MainWindow : Window
 
         doc.Blocks.Add(contentPara);
 
-        _currentAiParagraph = null;
+        _aiStreamBuffer.Clear();
+        _aiStreamSection = null;
         ScrollChatToEnd();
     }
 
     private void AppendStreamText(string text)
     {
+        _aiStreamBuffer.Append(text);
+
         var doc = (FlowDocument)ChatViewer.Document;
-        if (_currentAiParagraph == null)
+
+        // 移除旧的 AI 内容区
+        if (_aiStreamSection != null)
         {
-            _currentAiParagraph = new Paragraph
-            {
-                Margin = new Thickness(0, 4, 0, 4),
-                Foreground = (Brush)Application.Current.Resources["PrimaryDarkBrush"]
-            };
-            doc.Blocks.Add(_currentAiParagraph);
+            doc.Blocks.Remove(_aiStreamSection);
         }
 
-        if (_currentAiParagraph.Inlines.LastOrDefault() is Run lastRun)
-            lastRun.Text += text;
-        else
-            _currentAiParagraph.Inlines.Add(new Run(text));
+        // 实时渲染全文为 Markdown
+        var rendered = Markdown.MarkdownRenderer.Render(_aiStreamBuffer.ToString());
+        _aiStreamSection = new Section();
+        while (rendered.Blocks.Count > 0)
+        {
+            var block = rendered.Blocks.FirstBlock;
+            rendered.Blocks.Remove(block);
+            _aiStreamSection.Blocks.Add(block);
+        }
+        doc.Blocks.Add(_aiStreamSection);
 
         ScrollChatToEnd();
     }
 
     private void FlushCurrentAiParagraph()
     {
-        if (_currentAiParagraph == null || _currentAiParagraph.Inlines.Count == 0)
-        {
-            if (_currentAiParagraph != null)
-            {
-                ((FlowDocument)ChatViewer.Document).Blocks.Remove(_currentAiParagraph);
-                _currentAiParagraph = null;
-            }
-            return;
-        }
-
-        var textBuilder = new StringBuilder();
-        foreach (var inline in _currentAiParagraph.Inlines)
-        {
-            if (inline is Run run)
-                textBuilder.Append(run.Text);
-        }
-
-        var markdown = textBuilder.ToString();
-        var doc = (FlowDocument)ChatViewer.Document;
-        doc.Blocks.Remove(_currentAiParagraph);
-        _currentAiParagraph = null;
-
-        var rendered = Markdown.MarkdownRenderer.Render(markdown);
-        while (rendered.Blocks.Count > 0)
-        {
-            var block = rendered.Blocks.FirstBlock;
-            rendered.Blocks.Remove(block);
-            doc.Blocks.Add(block);
-        }
-
-        ScrollChatToEnd();
+        // 实时渲染模式，无需 flush — 内容已在 AppendStreamText 中逐块渲染
     }
 
     /// <summary>
@@ -1429,7 +1406,7 @@ public partial class MainWindow : Window
 
         cardBorder.Child = outerStack;
 
-        _currentAiParagraph = null;
+        _aiStreamSection = null;
         doc.Blocks.Add(new BlockUIContainer(cardBorder));
 
         var cardInfo = new ToolCardInfo(toolCallId, toolName, cardBorder, statusLabel, timeLabel, contentPanel);
