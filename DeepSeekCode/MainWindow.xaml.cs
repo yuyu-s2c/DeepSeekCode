@@ -740,7 +740,7 @@ public partial class MainWindow : Window
             _currentAiParagraph = new Paragraph
             {
                 Margin = new Thickness(0, 4, 0, 4),
-                Foreground = new SolidColorBrush(Color.FromRgb(212, 212, 212))
+                Foreground = (Brush)Application.Current.Resources["PrimaryDarkBrush"]
             };
             doc.Blocks.Add(_currentAiParagraph);
         }
@@ -774,18 +774,6 @@ public partial class MainWindow : Window
 
         var markdown = textBuilder.ToString();
         var doc = (FlowDocument)ChatViewer.Document;
-
-        // AI 标记行
-        doc.Blocks.Add(new Paragraph(new Run("DeepSeek")
-        {
-            Foreground = (Brush)Application.Current.Resources["AiLabelBrush"],
-            FontWeight = FontWeights.SemiBold
-        })
-        {
-            FontSize = 11,
-            Margin = new Thickness(0, 10, 0, 2)
-        });
-
         doc.Blocks.Remove(_currentAiParagraph);
         _currentAiParagraph = null;
 
