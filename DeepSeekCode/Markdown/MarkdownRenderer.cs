@@ -126,6 +126,9 @@ public static class MarkdownRenderer
 
         var border = new Border
         {
+            Background = new SolidColorBrush(Color.FromRgb(26, 42, 58)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(42, 64, 80)),
+            BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Margin = new Thickness(0, 8, 0, 8),
             Child = container,
