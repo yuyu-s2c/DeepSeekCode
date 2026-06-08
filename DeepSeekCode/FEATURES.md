@@ -8,9 +8,10 @@
 
 | 项 | 详情 |
 |----|------|
-| 技术栈 | C# + .NET 10 + WPF |
+| 技术栈 | C# 13 + .NET 10 + WPF + WebView2（marked.js/highlight.js 实时渲染） |
 | 目标 | 100% 适配 DeepSeek V4 Pro 的本地 AI Agent |
-| 核心优势 | Windows 原生桌面应用，零依赖分发 |
+| 核心优势 | Windows 原生桌面应用，Win11 自带 WebView2 Runtime |
+| NuGet 包 | Markdig + Markdig.Wpf + Microsoft.Web.WebView2 + HtmlAgilityPack + ColorCode.Core + FileSystemGlobbing |
 
 ---
 
@@ -18,7 +19,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   UI 层 (WPF)                        │
+│                   UI 层 (WPF + WebView2)               │
 │  MainWindow │ Slash命令栏 │ 状态栏 │ 对话框组件       │
 ├─────────────────────────────────────────────────────┤
 │                事件总线 (EventBus)                    │
@@ -83,7 +84,7 @@
 | U05 | **命令自动补全** | 输入 `/` 弹出命令列表，↑↓ 选择，Enter/Tab 填入 | ✅ 已完成 | — |
 | U06 | **系统托盘** | 最小化到托盘，常驻后台 | ❌ 待实现 | 🟢 P3 |
 | U07 | **快捷键** | Ctrl+Enter 发送、Ctrl+L 清屏（Window.PreviewKeyDown 全局注册） | ✅ 已完成 | 🟢 P2 |
-| U08 | **UI 全面重构** | 白底天蓝终端风格，消息全左对齐，工具卡片化带耗时追踪，子代理4状态动画，权限内联确认 | ✅ 已完成 | 🟢 P3 |
+| U08 | **UI 全面重构** | 白底天蓝配色，WebView2 + marked.js/highlight.js 实时 Markdown 渲染，工具卡片 HTML 化，思考动画折叠，900K 上下文窗口，JsonElement 参数安全解析，权限内联确认 | ✅ 已完成 | 🟢 P3 |
 
 ### 3.4 AI 工具层（AI Tools）
 
@@ -199,7 +200,7 @@ DeepSeekCode/
 ├── Skills/
 │   └── SkillEngine.cs                  # Markdown+Frontmatter 技能引擎
 ├── Markdown/
-│   ├── MarkdownRenderer.cs             # Markdig → WPF FlowDocument
+│   ├── ChatRenderer.cs                # WebView2 HTML 模板 + marked.js/highlight.js 渲染
 │   └── SyntaxHighlighter.cs            # ColorCode + HtmlAgilityPack 语法高亮
 ├── UI/
 │   └── StatusViewModel.cs              # 状态栏 MVVM（Token/缓存/模型）
