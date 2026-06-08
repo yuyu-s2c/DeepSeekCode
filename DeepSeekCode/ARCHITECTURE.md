@@ -27,8 +27,10 @@
 ## 模块职责
 
 ### UI 层
-- **MainWindow**：主界面，对话区 + Thinking 面板 + 输入栏
+- **MainWindow**：主界面，WebView2 对话区 + Thinking 面板 + 思考状态栏 + 输入栏 + 历史弹窗 + 命令补全 Popup
 - **ApiKeyWindow**：API Key 配置弹窗
+- **SettingsWindow**：四 Tab 设置窗口（模型/Thinking/生成参数/Beta）
+- **PermissionDialog**：三按钮权限确认弹窗（拒绝/允许本次/允许所有）
 - **StatusViewModel**：状态栏数据绑定（MVVM）
 
 ### 事件总线
@@ -36,9 +38,10 @@
 - 事件类型：流式输出（Started/Chunk/Completed/Cancelled/Error）、工具调用（Request/Result）、权限询问、会话切换、配置变更
 
 ### 对话引擎
-- **DeepSeekClient**：封装 DeepSeek API（SSE 流式 HTTP、thinking/reasoning_content 解析、重试）
-- **ConversationManager**：消息列表管理、上下文窗口控制
+- **DeepSeekClient**：封装 DeepSeek API（SSE 流式 HTTP、thinking/reasoning_content 解析、reasoning_effort: max）
+- **ConversationManager**：消息列表管理、上下文窗口控制（900K token 滑动窗口）
 - **ContextStrategy**：上下文策略接口 + 实现（滑动窗口裁剪、智能压缩预留、文件注入）
+- **ChatRenderer**：WebView2 渲染引擎，marked.js + highlight.js + KaTeX 实时 Markdown/代码/数学渲染
 
 ### 工具系统
 - **ITool**：工具接口（Name + Description + Parameters + ExecuteAsync）
@@ -47,14 +50,16 @@
 - 13 个内置工具：read_file, edit_file, write_file, glob, grep, shell, webfetch, read_skill, git_diff, git_log, git_commit, todo_write, task
 
 ### 权限系统
-- **PermissionManager**：Allow / Deny / Ask 三级权限
+- **PermissionManager**：Allow / Deny / Ask 三级权限 + 会话级"允许所有"临时覆盖
+- 三按钮弹窗：拒绝（立即停止对话）、允许本次、允许所有（本轮后续不再询问）
+- Deny 规则（危险命令）始终生效，不受"允许所有"影响
 - 默认规则：只读工具 Allow、危险命令 Deny、写操作 Ask
-- 可扩展自定义规则
 
 ### Slash 命令
 - **ISlashCommand**：命令接口
 - **SlashCommandRegistry**：注册 + 解析 + 分发
-- 内置命令：help / clear / model / save / load / config / compact / skills
+- 内置命令：help / clear / model / save / load / config / compact / settings / workspace / skills（10 个）
+- /save 自动从第一句用户消息生成标题；/load 仅显示当前工作区的会话
 
 ### 配置体系
 - **ConfigService**：用户级配置（`~\.deepseek-code\config.json`）
@@ -62,17 +67,19 @@
 - 合并策略：项目级 > 用户级
 
 ### 会话管理
-- **ISessionStore**：会话持久化接口
-- **FileSessionStore**：JSON 文件实现
-- **SessionMetadata**：会话元数据（ID、标题、时间、token 统计）
+- **ISessionStore**：会话持久化接口 + SetWorkspace 工作区切换
+- **FileSessionStore**：JSON 文件实现，存储于 `{workspace}/.deepseek-code/sessions/`（物理隔离）
+- **SessionMetadata**：会话元数据（ID、标题、时间、消息数、模型、工作区路径）
+- 支持覆盖保存（同 ID 覆盖）、删除（Delete 键/按钮）、智能标题生成
+- 💬 历史弹窗：↑↓/Enter/Esc 键盘导航，退出未保存提示
 
 ### 技能引擎
 - **SkillEngine**：扫描 + 加载 Markdown 技能文件 → 注入系统提示词
 - 支持用户级和项目级技能
 
 ### 子代理系统
-- **SubagentRunner**：独立对话循环，线程池隔离（Task.Run），V4 Flash 模型
-- **TaskTool**：task 工具，explore（只读）/ general（完整权限）双模式
+- **SubagentRunner**：独立对话循环，线程池隔离（Task.Run）
+- **TaskTool**：task 工具，explore（只读，V4 Flash，Thinking 关）/ general（完整权限，继承主模型，Thinking 开）双模式
 - 并行调度：`Task.WhenAll` 同时执行多个子代理
 - 取消传播：主 CancelToken 注入参数，停止按钮一并取消子代理
 
@@ -84,6 +91,16 @@
 ### Todo 追踪
 - **TodoWriteTool**：todo_write 工具，完整替换任务列表
 - UI 面板：进度条 + 状态图标（○/⏳/✔/✘）+ 优先级标记（⚡）
+
+### 思考意图提取
+- 流式输出中从 `reasoning_content` 尾部提取意图型句子（Let me/I'll/我先/接下来...）
+- 显示在思考状态栏，让用户实时了解 AI 下一步计划
+
+## 渲染技术栈
+- **Markdown**：marked.js（CDN v12）→ 流式实时渲染
+- **语法高亮**：highlight.js（@highlightjs/cdn-assets，github 亮色主题）
+- **数学公式**：KaTeX（CDN v0.16）+ protectMath/restoreMath 预处理防 marked.js 破坏 LaTeX
+- **DOM 管理**：全部使用 appendChild + createElement，无 innerHTML 拼接（避免 DOM 引用丢失）
 
 ## 数据流
 
@@ -131,10 +148,11 @@
 | 决策 | 理由 |
 |------|------|
 | WPF 而非 Blazor/Web | Windows 原生，零 Web 服务器依赖，GPU 加速渲染 |
-| Markdig 而非 WebView2 Markdown | 纯 .NET，不需要嵌入浏览器，FlowDocument 直接转换 |
+| WebView2 + marked.js/highlight.js/KaTeX | 成熟 JS 生态，实时流式渲染，支持 30+ 语言高亮 + LaTeX 数学 |
 | 内置 HTTP 而非 OpenAI SDK | DeepSeek 是 OpenAI 兼容格式，SDK 反而增加抽象层 |
 | 自定义 DI 而非 Microsoft.Extensions.DI | 减少依赖，桌面应用不需要重量级容器 |
 | 事件总线而非直接调用 | 工具调用、流式输出、权限询问全部解耦 |
+| 会话工作区物理隔离 | JSON 文件存 `{workspace}/.deepseek-code/sessions/`，文件系统级安全保障 |
 | MVP 优先，接口预留 | 核心跑通再扩展，不提前过度设计 |
 
 ## 扩展点
