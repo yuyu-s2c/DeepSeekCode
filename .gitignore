@@ -1,31 +1,3 @@
-# Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# Build results
-bin/
-obj/
-*.user
-*.suo
-*.cache
-*.vsidx
-
-# Node.js
 node_modules/
-package-lock.json
-
-# Python
-__pycache__/
-*.py[cod]
-
-# JetBrains
-.idea/
-
-# macOS
-.DS_Store
-
-# Rust
-target/
+dist/
+*.tsbuildinfo
