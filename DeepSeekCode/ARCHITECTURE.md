@@ -40,11 +40,11 @@
 - 事件类型：流式输出（Started/Chunk/Completed/Cancelled/Error）、工具调用（Request/Result）、权限询问、会话切换、配置变更（含 CredentialsChanged）
 
 ### 对话引擎
-- **DeepSeekClient**：封装 DeepSeek API（SSE 流式、thinking: adaptive、reasoning_effort、运行时 UpdateCredentials）
-- **ConversationManager**：消息列表管理、上下文窗口控制（900K/1M token）、额外 system context 动态注入
-- **ContextStrategy**：SmartCompress（AI 摘要旧轮次）→ SlidingWindow（暴力裁剪兜底）→ FileInjection（项目文件注入）
+- **DeepSeekClient**：封装 DeepSeek API（SSE 流式、thinking: adaptive、reasoning_effort、运行时 UpdateCredentials、SocketsHttpHandler 连接池）
+- **ConversationManager**：消息列表管理、上下文窗口控制（900K/1M token）、额外 system context 动态注入、O(n) 裁剪
+- **ContextStrategy**：TruncateToolResults（500K+ 截断大工具结果）→ SmartCompress（800K+ AI 摘要，缓存友好：摘要注入 user 消息保持 KV Cache 前缀）→ SlidingWindow（950K+ 暴力裁剪兜底）→ FileInjection（项目文件注入）
 - **PlanModeService**：Plan 模式状态管理 + 5 阶段提示词生成
-- **ChatRenderer**：WebView2 渲染引擎，marked.js + highlight.js + KaTeX
+- **ChatRenderer**：WebView2 渲染引擎（marked.js + highlight.js + KaTeX），50ms 节流 + requestAnimationFrame 增量渲染
 
 ### 工具系统
 - **ITool**：工具接口（Name + Description + Parameters + ExecuteAsync + ToDefinition）
@@ -187,8 +187,12 @@
 | 事件总线而非直接调用 | 工具调用、流式输出、权限询问全部解耦 |
 | 会话工作区物理隔离 | JSON 文件存 {workspace}/.deepseek-code/sessions/ |
 | JSON-RPC 2.0 over stdio for MCP | 业界标准传输方式，跨平台兼容 |
-| SmartCompress 优先于 SlidingWindow | AI 摘要保留关键信息，避免暴力丢轮次 |
+| 缓存友好设计：摘要注入 user 消息 | 保持 system 消息前缀不变，KV Cache 持续命中，费用降低 100x+ |
+| Token 中英文分离估算 | 官方文档：英文 0.3/中文 0.6 token/char，精度提升 30% |
+| 三级上下文策略（轻中重） | 500K 截断 → 800K 摘要 → 950K 裁剪，渐进式而非一刀切 |
 | Plan Mode 通过 extraSystemContext 注入 | 不污染永久消息列表，退出自动清理 |
+| WebView2 50ms 节流 + rAF | 流式输出从 100+ 次/秒降至 ~20 次/秒，长文本不卡顿 |
+| HttpClient SocketsHttpHandler 连接池 | HTTP/2 多路复用 + Keep-Alive，连续请求延迟降 30% |
 
 ## 扩展点
 

@@ -49,7 +49,7 @@
 | A01 | **事件总线** | 全局 EventBus，支持 URL ↔ 核心逻辑松耦合通信。22 个事件类型 | ✅ 已完成 | 🔴 P0 |
 | A02 | **权限系统** | Allow / Deny / Ask 三级权限。危险命令默认 Deny（命令名精确匹配），可信任标记 Always。已接入 ToolPipeline | ✅ 已完成 | 🔴 P0 |
 | A03 | **配置体系** | 用户级 `~/.deepseek-code/config.json` + 项目级 `.deepseek-code/project.json`。12 项配置、四 Tab 设置窗口（含账户标签页） | ✅ 已完成 | 🔴 P0 |
-| A04 | **上下文策略** | SmartCompress 智能摘要 + SlidingWindow 滑动窗口 + 文件注入。900K/1M 窗口，状态栏 ctx:N% 实时显示 | ✅ 已完成 | 🟡 P1 |
+| A04 | **上下文策略** | 三级分层策略（TruncateToolResults → SmartCompress → SlidingWindow），缓存友好设计（摘要注入 user 消息保持 KV Cache 前缀），Token 中英文分离估算（0.3/0.6），900K/1M 窗口 | ✅ 已完成 | 🔴 P0 |
 | A05 | **工作区服务** | 自动检测项目根目录（.git/.sln/.csproj），点击切换 + /workspace 命令 | ✅ 已完成 | — |
 | A06 | **Skills 系统** | Markdown 驱动技能文件，全量 description 注入系统提示词（Claude Code 风格），正文通过 read_skill 工具获取 | ✅ 已完成 | 🟡 P1 |
 | A07 | **子代理 (Subagent)** | 并行分派独立任务（线程池 + Task.Run），独立 V4 Flash 模型，explore/general 双模式，带取消令牌和超时保护。左下侧边栏常驻显示 | ✅ 已完成 | 🟢 P2 |
@@ -65,10 +65,10 @@
 | 编号 | 功能 | 描述 | 状态 | 优先级 |
 |------|------|------|------|--------|
 | F01 | **DeepSeek API 流式对话** | 支持 chat 和 reasoner 模型，SSE 流式解析，thinking: adaptive 自适应思考，reasoning_effort 控制 | ✅ 已完成 | — |
-| F02 | **工具系统 (Function Calling)** | 13 个工具（均英文 Description + 微文档化参数说明）：read_file, edit_file, write_file, glob, grep, shell, webfetch, read_skill, git_diff, git_log, git_commit, todo_write, task | ✅ 已完成 | — |
+| F02 | **工具系统 (Function Calling)** | 15 个工具（均英文 Description + 微文档化参数说明）：read_file, edit_file, write_file, glob, grep, shell, webfetch, read_skill, git_diff, git_log, git_commit, todo_write, task, enter_plan_mode, exit_plan_mode | ✅ 已完成 | — |
 | F03 | **Markdown 渲染** | Markdig → FlowDocument，支持标题、代码块、列表、引用、粗斜体、链接 | ✅ 已完成 | — |
 | F04 | **Thinking 面板** | 右侧可折叠面板，实时展示 reasoning_content | ✅ 已完成 | — |
-| F05 | **Slash 命令系统** | /help /clear /model /save /load /settings /workspace /config /compact /skills 共 10 个命令 | ✅ 已完成 | 🔴 P0 |
+| F05 | **Slash 命令系统** | 12 个内置命令 + 自定义命令，/help /clear /model /save /load /settings /workspace /config /compact /skills /mcp /plan | ✅ 已完成 | 🔴 P0 |
 | F06 | **会话持久化** | 自动保存/恢复对话历史，/save /load 命令，JSON 文件存储 | ✅ 已完成 | 🟡 P1 |
 | F13 | **DeepSeek Thinking 集成** | thinking 开关、reasoning_effort、reasoning_content 回传、参数屏蔽 | ✅ 已完成 | — |
 | F07 | **Git 集成** | 自动 commit、diff 预览、log 查看 | ✅ 已完成 | 🟢 P2 |
@@ -82,13 +82,13 @@
 
 | 编号 | 功能 | 描述 | 状态 | 优先级 |
 |------|------|------|------|--------|
-| U01 | **状态栏** | Token 消耗、缓存命中率、模型名称、上下文占用 ctx:N%、模式指示（🤖自动/📋Plan） | ✅ 已完成 | 🟢 P2 |
+| U01 | **状态栏** | Token 消耗、🔥 缓存命中率、模型名称、上下文占用 ctx:N%、模式指示（🤖自动/📋Plan） | ✅ 已完成 | 🟢 P2 |
 | U01.5 | **工作区指示条** | 顶部常驻路径显示 + 点击弹出原生文件夹选择 | ✅ 已完成 | — |
 | U02 | **输入历史** | ↑↓ 方向键翻历史消息 | ✅ 已完成 | 🟡 P1 |
 | U03 | **进度指示** | 状态栏 spinner 动画（⣾⣽⣻⢿⡿⣟⣯⣷），AI 思考中/工具执行中/完成 三阶段状态切换 | ✅ 已完成 | 🟢 P2 |
 | U04 | **消息右键菜单** | 用户消息气泡右键「复制消息」「重新发送」，非用户区右键「复制」选中文本 | ✅ 已完成 | 🟢 P2 |
 | U05 | **命令自动补全** | 输入 `/` 弹出命令列表，↑↓ 选择，Enter/Tab 填入 | ✅ 已完成 | — |
-| U06 | **系统托盘** | 最小化到托盘，常驻后台 | ❌ 待实现 | 🟢 P3 |
+| U06 | **系统托盘** | 最小化到托盘，常驻后台 | ➖ 不做 | 🟢 P3 |
 | U07 | **快捷键** | Ctrl+Enter 发送、Ctrl+L 清屏、Ctrl+B 切换侧边栏 | ✅ 已完成 | 🟢 P2 |
 | U08 | **左侧侧边栏** | 任务列表 + 子代理进度常驻显示，可拖拽宽度，可折叠。运行中项带脉冲动画/进度条 | ✅ 已完成 | 🟢 P2 |
 | U09 | **工具卡片截断** | 工具执行结果卡片限制 5 行，超出显示"···共N行"或"···共N字符" | ✅ 已完成 | 🟢 P3 |
@@ -147,15 +147,16 @@
 17. U04 右键菜单 ✅
 18. U07 快捷键 ✅
 19. A07 子代理系统 ✅
+20. WebView2 渲染节流（50ms + requestAnimationFrame）✅
 ```
 
-### P3 — 锦上添花（远期）
+### P3 — 锦上添花
 
 ```
-20. U06 系统托盘 ❌
-21. 主题切换 ❌
-22. Hooks 系统（PreToolUse/PostToolUse）❌
-23. 打包分发（single exe）❌
+21. U06 系统托盘 ➖ 不做
+22. 主题切换 ➖ 不做
+23. Hooks 系统 ➖ 不做
+24. 打包分发（单文件 63MB exe）✅ 已完成
 ```
 
 ---
