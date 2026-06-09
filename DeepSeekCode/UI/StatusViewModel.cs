@@ -74,8 +74,18 @@ public class StatusViewModel : INotifyPropertyChanged
     }
 
     public string TokenDisplay => _cacheHitTokens > 0
-        ? $"Token: {TokenCount:N0} | 缓存命中: {CacheHitTokens:N0}"
+        ? $"Token: {TokenCount:N0} | 🔥 命中: {CacheHitTokens:N0} ({CacheHitRatio:F0}%)"
         : $"Token: {TokenCount:N0}";
+
+    /// <summary>缓存命中率（百分比）</summary>
+    public double CacheHitRatio =>
+        _cacheHitTokens + _cacheMissTokens > 0
+            ? (double)_cacheHitTokens / (_cacheHitTokens + _cacheMissTokens) * 100
+            : 0;
+
+    public string CacheDisplay => _cacheHitTokens > 0
+        ? $"🔥 缓存命中率: {CacheHitRatio:F0}% ({_cacheHitTokens:N0} / {_cacheHitTokens + _cacheMissTokens:N0})"
+        : "";
 
     public string ContextDisplay
     {

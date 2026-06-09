@@ -15,7 +15,17 @@ public class DeepSeekClient : IDisposable
 
     public DeepSeekClient(AppConfig config)
     {
-        _http = new HttpClient
+        // 使用 SocketsHttpHandler 启用连接池、Keep-Alive、HTTP/2 多路复用
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            EnableMultipleHttp2Connections = true,
+            KeepAlivePingDelay = TimeSpan.FromSeconds(30),
+            MaxConnectionsPerServer = 4
+        };
+
+        _http = new HttpClient(handler)
         {
             BaseAddress = new Uri(config.ApiBaseUrl),
             Timeout = TimeSpan.FromMinutes(10)
@@ -121,8 +131,7 @@ public class DeepSeekClient : IDisposable
 
     public Task<int> EstimateTokenCount(string text)
     {
-        var count = (int)Math.Ceiling(text.Length / 2.5);
-        return Task.FromResult(count);
+        return Task.FromResult(EstimateTokenCountSync(text));
     }
 
     public Task<int> EstimateTokenCount(List<ChatMessage> messages)
@@ -130,18 +139,53 @@ public class DeepSeekClient : IDisposable
         return Task.FromResult(EstimateTokenCountSync(messages));
     }
 
-    /// <summary>同步估算 token（无需 API 调用，用于锁内快速计算）</summary>
+    /// <summary>
+    /// 按字符类型精确估算 token 数。
+    /// 官方换算（DeepSeek API Docs）：
+    ///   1 英文字符 ≈ 0.3 token
+    ///   1 中文字符 ≈ 0.6 token
+    /// 代码/数字/标点按英文比率 0.3 计算。
+    /// </summary>
+    public static int EstimateTokenCountSync(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 0;
+
+        // 统计各类字符数
+        var asciiChars = 0;   // 英文、数字、标点、空格等
+        var cjkChars = 0;     // 中文、日文、韩文等全角字符
+
+        foreach (var c in text)
+        {
+            if (c >= 0x4E00 && c <= 0x9FFF ||   // CJK 统一汉字
+                c >= 0x3400 && c <= 0x4DBF ||   // CJK 扩展 A
+                c >= 0x20000 && c <= 0x2A6DF || // CJK 扩展 B
+                c >= 0xF900 && c <= 0xFAFF ||   // CJK 兼容汉字
+                c >= 0x3040 && c <= 0x309F ||   // 平假名
+                c >= 0x30A0 && c <= 0x30FF ||   // 片假名
+                c >= 0xAC00 && c <= 0xD7AF)     // 韩文
+                cjkChars++;
+            else
+                asciiChars++;
+        }
+
+        // 英文/代码/标点: 0.3 token/char，中文: 0.6 token/char
+        // 加上少量 overhead
+        return (int)Math.Ceiling(asciiChars * 0.3 + cjkChars * 0.6);
+    }
+
+    /// <summary>同步估算消息列表 token（无需 API 调用，用于锁内快速计算）</summary>
     public static int EstimateTokenCountSync(List<ChatMessage> messages)
     {
         var total = 0;
         foreach (var msg in messages)
         {
             if (msg.Content != null)
-                total += (int)Math.Ceiling(msg.Content.Length / 2.5);
+                total += EstimateTokenCountSync(msg.Content);
             if (msg.ToolCalls != null)
             {
                 foreach (var tc in msg.ToolCalls)
-                    total += (int)Math.Ceiling(tc.Function.Arguments.Length / 2.5) + 10;
+                    total += EstimateTokenCountSync(tc.Function.Arguments) + 10;
             }
         }
         return total;

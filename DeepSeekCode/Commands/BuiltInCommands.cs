@@ -226,7 +226,7 @@ public class ConfigCommand : ISlashCommand
     private static readonly Dictionary<string, (string Label, string Desc)> ConfigKeys = new()
     {
         ["model"] = ("模型", "deepseek-v4-pro 或 deepseek-v4-flash"),
-        ["maxTokens"] = ("最大 Token", "单次生成最大 token 数（256-32768）"),
+        ["maxTokens"] = ("最大 Token", "单次生成最大 token 数（256-384000，V4 最大输出 384K）"),
         ["thinkingEnabled"] = ("Thinking 模式", "true 或 false"),
         ["reasoningEffort"] = ("推理力度", "max / high / medium / low / min"),
         ["temperature"] = ("温度", "0.0-2.0，Thinking 模式无效"),
@@ -317,8 +317,8 @@ public class ConfigCommand : ISlashCommand
                 config.Model = value;
                 break;
             case "maxTokens":
-                if (!int.TryParse(value, out var tokens) || tokens < 256 || tokens > 32768)
-                    return "maxTokens 必须在 256-32768 之间";
+                if (!int.TryParse(value, out var tokens) || tokens < 256 || tokens > 384_000)
+                    return "maxTokens 必须在 256-384000 之间（V4 最大输出 384K）";
                 config.MaxTokens = tokens;
                 break;
             case "thinkingEnabled":

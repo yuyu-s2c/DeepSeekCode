@@ -17,7 +17,7 @@ public class ConversationManager
         get { lock (_msgLock) return _messages.ToList(); }
     }
 
-    public ConversationManager(DeepSeekClient client, int maxContextTokens = 32000)
+    public ConversationManager(DeepSeekClient client, int maxContextTokens = 900_000)
     {
         _client = client;
         _maxContextTokens = maxContextTokens;
@@ -128,24 +128,30 @@ public class ConversationManager
 
         lock (_msgLock)
         {
-            // 保存所有 system 消息
+            // 保存所有 system 消息（缓存锚点，不可删除）
             var systemMsgs = _messages.Where(m => m.Role == "system").ToList();
             _messages.RemoveAll(m => m.Role == "system");
 
-            // 按完整轮次（user → assistant → tool results）分组裁剪
+            // 按完整轮次分组并预计算每轮 token（避免 O(n²) 重复计算）
             var rounds = SplitIntoRounds(_messages);
+            var roundTokens = new int[rounds.Count];
+            for (var i = 0; i < rounds.Count; i++)
+                roundTokens[i] = rounds[i].Sum(m => DeepSeekClient.EstimateTokenCountSync(m.Content ?? ""));
+            var currentTotal = roundTokens.Sum();
             var minRounds = 2;
 
-            while (rounds.Count > minRounds)
+            while (rounds.Count > minRounds && currentTotal > _maxContextTokens)
             {
-                tokenCount = EstimateQuick(_messages);
-                if (tokenCount <= _maxContextTokens) break;
-
-                // 删除最早的一轮
+                // 删除最早一轮，O(1) 减法而非 O(n) 重算
+                currentTotal -= roundTokens[0];
                 var oldestRound = rounds[0];
                 foreach (var msg in oldestRound)
                     _messages.Remove(msg);
                 rounds.RemoveAt(0);
+                // 移除对应的 token 计数
+                var newRoundTokens = new int[roundTokens.Length - 1];
+                Array.Copy(roundTokens, 1, newRoundTokens, 0, newRoundTokens.Length);
+                roundTokens = newRoundTokens;
             }
 
             // 恢复所有 system 消息
@@ -186,7 +192,7 @@ public class ConversationManager
     }
 
     /// <summary>
-    /// 压缩对话上下文：对旧消息做摘要并替换为一条 system 消息
+    /// 压缩对话上下文：对旧消息做摘要并替换为用户消息（缓存友好：不插入 system 消息）
     /// 保留 system 消息 + 最后 keepRounds 轮，其余压缩为摘要
     /// </summary>
     public async Task CompactContextAsync(int keepRounds = 3)
@@ -239,7 +245,12 @@ public class ConversationManager
                 var currentSystem = _messages.Where(m => m.Role == "system").ToList();
                 _messages.Clear();
                 _messages.AddRange(currentSystem);
-                _messages.Add(ChatMessage.CreateSystem($"## 历史对话摘要\n\n{summary}"));
+                // 缓存友好：摘要作为 user 消息注入，而非 system 消息
+                _messages.Add(ChatMessage.CreateUser(
+                    $"<conversation_history_summary>\n" +
+                    $"以下是对之前 {roundsToCompress.Count} 轮对话的摘要：\n\n" +
+                    $"{summary}\n" +
+                    $"</conversation_history_summary>"));
                 foreach (var round in roundsToKeep)
                     _messages.AddRange(round);
             }

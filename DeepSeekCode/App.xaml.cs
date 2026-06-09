@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -140,9 +140,10 @@ public partial class App : Application
             }
         };
         var contextOrchestrator = new ContextStrategyOrchestrator(contextOptions)
-            .AddStrategy(new SmartCompressStrategy())
-            .AddStrategy(new SlidingWindowStrategy())
-            .AddStrategy(new FileInjectionStrategy());
+            .AddStrategy(new TruncateToolResultsStrategy())  // 500K+ : 截断大工具结果
+            .AddStrategy(new SmartCompressStrategy())        // 800K+ : AI 摘要旧轮次
+            .AddStrategy(new SlidingWindowStrategy())        // 950K+ : 暴力裁剪兜底
+            .AddStrategy(new FileInjectionStrategy());       // 始终: 注入项目关键文件
         locator.RegisterInstance(contextOrchestrator);
 
         // 注入到 ConversationManager

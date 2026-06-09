@@ -735,18 +735,7 @@ When the conversation grows beyond the context window limit, older messages are 
 
         StatusTokenLabel.Text = _statusVm.TokenDisplay;
         StatusContextLabel.Text = _statusVm.ContextDisplay;
-
-        if (e.CacheHitTokens > 0)
-        {
-            var hitRatio = e.PromptTokens > 0
-                ? (double)e.CacheHitTokens / e.PromptTokens * 100
-                : 0;
-            StatusCacheLabel.Text = $"缓存命中率: {hitRatio:F0}% ({e.CacheHitTokens:N0} tokens)";
-        }
-        else
-        {
-            StatusCacheLabel.Text = "";
-        }
+        StatusCacheLabel.Text = _statusVm.CacheDisplay;
     }
 
     // ═══════════════════════════════════════════

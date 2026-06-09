@@ -26,8 +26,8 @@ public interface IContextStrategy
 /// </summary>
 public class ContextStrategyOptions
 {
-    /// <summary>最大 token 数</summary>
-    public int MaxTokens { get; set; } = 32000;
+    /// <summary>最大 token 数（V4 Pro/Flash 均 1M 上下文，默认留 100K 给输出 + 工具定义）</summary>
+    public int MaxTokens { get; set; } = 900_000;
 
     /// <summary>保留的最少轮数（SmartCompress 保留完整轮数，SlidingWindow 的绝对下限）</summary>
     public int MinRounds { get; set; } = 6;
@@ -52,7 +52,8 @@ public class ContextStrategyOptions
 }
 
 /// <summary>
-/// 滑动窗口策略：保留最近 N 轮 + System prompt，超出直接裁剪
+/// 滑动窗口策略：保留最近 N 轮 + System prompt，超出直接裁剪。
+/// 仅裁剪非 system 消息，保持前缀不变以保护 KV Cache。
 /// </summary>
 public class SlidingWindowStrategy : IContextStrategy
 {
@@ -62,14 +63,15 @@ public class SlidingWindowStrategy : IContextStrategy
         List<ChatMessage> messages,
         ContextStrategyOptions options)
     {
-        if (options.TokenEstimator == null || messages.Count <= 2)
+        if (messages.Count <= 2)
             return messages;
 
         var result = new List<ChatMessage>(messages);
 
-        while (await EstimateTotal(result, options.TokenEstimator) > options.MaxTokens
+        while (DeepSeekClient.EstimateTokenCountSync(result) > options.MaxTokens
                && result.Count > options.MinRounds * 2 + 1)
         {
+            // 找到第一个非 system 消息的轮次起始
             var roundStart = result.FindIndex(m => m.Role == "user");
             if (roundStart < 0) break;
 
@@ -82,23 +84,12 @@ public class SlidingWindowStrategy : IContextStrategy
 
         return result;
     }
-
-    private static async Task<int> EstimateTotal(
-        List<ChatMessage> messages,
-        Func<string, Task<int>> estimator)
-    {
-        var total = 0;
-        foreach (var msg in messages)
-        {
-            if (msg.Content != null)
-                total += await estimator(msg.Content);
-        }
-        return total;
-    }
 }
 
 /// <summary>
-/// 智能压缩策略：超限时对旧消息做摘要压缩，保留关键信息
+/// 智能压缩策略：超限时对旧消息做摘要压缩，保留关键信息。
+/// 采用缓存友好设计：摘要作为 user 角色消息注入而非 system 消息，
+/// 保持 system prompt 前缀不变 → DeepSeek KV Cache 持续命中。
 /// </summary>
 public class SmartCompressStrategy : IContextStrategy
 {
@@ -111,11 +102,12 @@ public class SmartCompressStrategy : IContextStrategy
         if (options.TokenEstimator == null || options.Summarizer == null || messages.Count <= 4)
             return messages;
 
-        var totalTokens = await EstimateTotal(messages, options.TokenEstimator);
+        // 使用同步快速估算避免 N 次异步调用
+        var totalTokens = DeepSeekClient.EstimateTokenCountSync(messages);
         if (totalTokens <= options.MaxTokens)
             return messages;
 
-        // 保护 System prompt 和最后 N 轮，压缩中间部分
+        // 分离 system 和非 system 消息
         var systemMsgs = messages.Where(m => m.Role == "system").ToList();
         var nonSystem = messages.Where(m => m.Role != "system").ToList();
 
@@ -155,10 +147,19 @@ public class SmartCompressStrategy : IContextStrategy
             var summary = await options.Summarizer(sb.ToString());
             if (!string.IsNullOrWhiteSpace(summary))
             {
-                // 构建结果：system 消息 + 摘要 + 保留的最近轮次
+                // 缓存友好设计：摘要作为 user 消息注入，而非 system 消息。
+                // 保持 system prompt 前缀不变 → DeepSeek KV Cache 持续命中 → 费用降低 100x+
                 var result = new List<ChatMessage>();
                 result.AddRange(systemMsgs);
-                result.Add(ChatMessage.CreateSystem($"## Conversation Summary (compressed)\n\nThe following summarizes earlier conversation rounds that have been trimmed to save context:\n\n{summary}"));
+
+                // 插入摘要 user 消息（标记为压缩历史，AI 可识别）
+                result.Add(ChatMessage.CreateUser(
+                    $"<conversation_history_summary>\n" +
+                    $"以下是对之前 {roundsToCompress.Count} 轮对话的摘要，原始消息已被裁剪以节省上下文空间：\n\n" +
+                    $"{summary}\n" +
+                    $"</conversation_history_summary>\n\n" +
+                    $"请基于以上摘要和接下来的对话继续工作。"));
+
                 foreach (var round in roundsToKeep)
                     result.AddRange(round);
                 return result;
@@ -169,7 +170,7 @@ public class SmartCompressStrategy : IContextStrategy
             // 摘要失败，回退到滑动窗口裁剪
         }
 
-        // 摘要失败或为空，回退到简单裁剪
+        // 摘要失败或为空，回退到简单裁剪（仅保留 system + 最近轮次）
         var fallback = new List<ChatMessage>();
         fallback.AddRange(systemMsgs);
         foreach (var round in roundsToKeep)
@@ -193,19 +194,6 @@ public class SmartCompressStrategy : IContextStrategy
         }
 
         return rounds;
-    }
-
-    private static async Task<int> EstimateTotal(
-        List<ChatMessage> messages,
-        Func<string, Task<int>> estimator)
-    {
-        var total = 0;
-        foreach (var msg in messages)
-        {
-            if (msg.Content != null)
-                total += await estimator(msg.Content);
-        }
-        return total;
     }
 }
 
@@ -315,7 +303,7 @@ public class FileInjectionStrategy : IContextStrategy
 }
 
 /// <summary>
-/// 上下文策略编排器：组合多个策略顺序执行
+/// 上下文策略编排器：按优先级顺序执行策略（轻→中→重）
 /// </summary>
 public class ContextStrategyOrchestrator
 {
@@ -334,7 +322,7 @@ public class ContextStrategyOrchestrator
         return this;
     }
 
-    /// <summary>执行所有策略</summary>
+    /// <summary>执行所有策略（按注册顺序，轻→中→重）</summary>
     public async Task<List<Models.ChatMessage>> ProcessAsync(
         List<ChatMessage> messages,
         ContextStrategyOptions? overrideOptions = null)
@@ -346,5 +334,57 @@ public class ContextStrategyOrchestrator
             result = await strategy.ProcessAsync(result, options);
 
         return result;
+    }
+}
+
+/// <summary>
+/// 工具结果截断策略（轻量级，500K-800K 区间）。
+/// 截断过大的工具返回结果，减少上下文占用而不破坏对话结构。
+/// </summary>
+public class TruncateToolResultsStrategy : IContextStrategy
+{
+    public string Name => "TruncateToolResults";
+
+    /// <summary>单条工具结果最大字符数</summary>
+    private const int MaxToolResultChars = 5000;
+
+    /// <summary>触发截断的 token 阈值（低于此值不做处理）</summary>
+    private const int TriggerThreshold = 500_000;
+
+    public Task<List<ChatMessage>> ProcessAsync(
+        List<ChatMessage> messages,
+        ContextStrategyOptions options)
+    {
+        var totalTokens = DeepSeekClient.EstimateTokenCountSync(messages);
+        if (totalTokens <= TriggerThreshold)
+            return Task.FromResult(messages);
+
+        var modified = false;
+        var result = new List<ChatMessage>(messages.Count);
+
+        foreach (var msg in messages)
+        {
+            if (msg.Role == "tool" && msg.Content != null && msg.Content.Length > MaxToolResultChars)
+            {
+                var truncated = msg.Content[..MaxToolResultChars];
+                var totalLines = msg.Content.Count(c => c == '\n') + 1;
+                var keptLines = truncated.Count(c => c == '\n') + 1;
+                var suffix = $"\n\n...(已截断 {totalLines - keptLines} 行 / {msg.Content.Length - MaxToolResultChars} 字符)";
+                result.Add(new ChatMessage
+                {
+                    Role = msg.Role,
+                    Content = truncated + suffix,
+                    ToolCallId = msg.ToolCallId,
+                    Name = msg.Name
+                });
+                modified = true;
+            }
+            else
+            {
+                result.Add(msg);
+            }
+        }
+
+        return Task.FromResult(modified ? result : messages);
     }
 }
