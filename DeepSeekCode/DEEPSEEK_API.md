@@ -85,7 +85,7 @@
 |------|--------|----------|
 | JSON Output | ✅ | ✅ |
 | Tool Calls | ✅ | ✅ |
-| Chat Prefix Completion (Beta) | ✅ | ✅ |
+| Chat Prefix Completion (Beta) | ❌ 已移除（API 不支持） | ❌ |
 | FIM Completion (Beta) | 非 Thinking 模式 | 非 Thinking 模式 |
 | Context Caching | ✅ | ✅ |
 
@@ -94,16 +94,15 @@
 ## 五、Context Caching
 
 - **默认启用**，无需代码修改
-- 磁盘缓存，匹配请求的前缀部分
-- 缓存命中 token 计入 `prompt_cache_hit_tokens`，费用更低
+- **磁盘缓存前缀单元**（非连续前缀匹配）：需**完全匹配**缓存单元才命中
+- 缓存单元在以下位置创建：user 输入结束位置、模型输出结束位置、固定 token 间隔、公共前缀检测
+- 缓存命中 token 计入 `prompt_cache_hit_tokens`，费用降低 ~100x
 - 缓存未命中 token 计入 `prompt_cache_miss_tokens`
-- 缓存自动清除（数小时到数天）
-
-### 缓存命中条件
-
-1. **请求边界持久化**：user 输入结束位置 + 模型输出结束位置形成缓存单元
-2. **公共前缀检测**：多请求共享前缀自动持久化
-3. **固定 token 间隔**：长输入/输出定期分块持久化
+- 缓存构造需数秒，自动清除（数小时到数天）
+- 项目优化：
+  - FileInjection 在 session 初始化时写入 `_messages` 固定位置（系统消息之后、用户消息之前），作为缓存前缀的一部分
+  - Plan 模式 extraSystemContext 插入最后一个 system 消息之后，保持固定位置
+  - 上下文压缩/裁剪均保护 system 消息前缀不变
 
 ---
 
@@ -120,12 +119,15 @@
 
 | 特性 | 状态 | 备注 |
 |------|------|------|
-| `thinking` 参数 | ✅ | DeepSeekClient 已传 `{"thinking": {"type": "enabled/disabled"}}` |
+| `thinking` 参数 | ✅ | DeepSeekClient 发送 `{"thinking": {"type": "enabled/disabled"}}` |
 | `reasoning_effort` | ✅ | 已支持 high/max |
 | `reasoning_content` 回传 | ✅ | ChatMessage 已加字段，工具调用轮次正确回传 |
 | Thinking 模式下屏蔽无效参数 | ✅ | temperature/top_p 仅在非 Thinking 模式发送 |
 | JSON Output | ✅ | `response_format: { type: "json_object" }` 已加，受 EnableJsonOutput 控制 |
-| Chat Prefix Completion | ✅ | Beta 功能，`prefix` 参数已加，受 EnablePrefixCompletion + PrefixContent 控制 |
+| Chat Prefix Completion | ❌ | 已移除（commit 835e5ea），DeepSeek API 不支持此参数 |
 | FIM Completion | ✅ | Beta 功能，DeepSeekClient.CompleteAsync() 支持 /v1/completions 端点 |
 | Cache 状态读取 | ✅ | TokenUsage 模型解析 usage，含 prompt_cache_hit_tokens。状态栏显示缓存命中率 |
 | V4 模型迁移 | ✅ | 默认模型已是 `deepseek-v4-pro`，旧名 deepseek-chat 已全部替换 |
+| Context Caching 优化 | ✅ | FileInjection/PlanMode 上下文固定前缀位置，缓存命中率优化 |
+| 路径安全 | ✅ | 工作区外路径强制弹窗确认（forceAsk），工作区内正常权限规则 |
+| Shell 命令黑名单 | ✅ | 11 条 Deny 规则（rm/del/rmdir/rd/format/shutdown/restart/taskkill/reg/takeown/icacls），全命令整词扫描 |

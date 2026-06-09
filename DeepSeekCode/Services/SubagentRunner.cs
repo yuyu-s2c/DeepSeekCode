@@ -18,8 +18,15 @@ public class SubagentRunner
     private readonly Logger _logger;
 
     private const int MaxIterations = 15;
-    private const int TimeoutMs = 120000;
     private const int MaxContextTokens = 16000;
+
+    /// <summary>当前子代理类型，用于按类型区分超时等参数</summary>
+    private string _currentSubagentType = "explore";
+
+    /// <summary>explore 子代理超时（只读搜索，快）</summary>
+    private const int ExploreTimeoutMs = 120_000;
+    /// <summary>general 子代理超时（完整工具链，需要更多时间）</summary>
+    private const int GeneralTimeoutMs = 300_000;
 
     public SubagentRunner(
         DeepSeekClient client,
@@ -50,6 +57,7 @@ public class SubagentRunner
         CancellationToken ct)
     {
         var startTime = DateTime.Now;
+        _currentSubagentType = subagentType;
 
         _eventBus.Publish(new SubagentStartedEvent
         {
@@ -60,7 +68,8 @@ public class SubagentRunner
 
         try
         {
-            using var timeoutCts = new CancellationTokenSource(TimeoutMs);
+            var timeoutMs = subagentType == "explore" ? ExploreTimeoutMs : GeneralTimeoutMs;
+            using var timeoutCts = new CancellationTokenSource(timeoutMs);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
             var messages = new List<ChatMessage>
@@ -140,7 +149,7 @@ Working directory: {ws}
 
 # Harness
  - Your job is to execute the specific task assigned to you, then return the result as plain text. Do not greet, explain what you are, or engage in off-task conversation.
- - You are done when you can produce a final answer without calling more tools. Max {MaxIterations} tool call iterations, {TimeoutMs / 1000}s timeout.
+ - You are done when you can produce a final answer without calling more tools. Max {MaxIterations} tool call iterations, {GeneralTimeoutMs / 1000}s timeout.
  - Prefer the dedicated file/search tools over shell commands when one fits. Independent tool calls can run in parallel in one response.
  - Reference code as `file_path:line_number`.
  - Report outcomes faithfully: if you couldn't find something, say so. Do not speculate.
@@ -312,8 +321,9 @@ You are using the main conversation's model with Thinking enabled (reasoning_eff
         // 日志过滤器
         pipeline.AddFilter(new Tools.LoggingFilter());
 
-        // 超时过滤器
-        pipeline.AddFilter(new Tools.TimeoutFilter(TimeoutMs));
+        // 超时过滤器（按子代理类型区分）
+        var toolTimeoutMs = _currentSubagentType == "explore" ? ExploreTimeoutMs : GeneralTimeoutMs;
+        pipeline.AddFilter(new Tools.TimeoutFilter(toolTimeoutMs));
 
         return pipeline;
     }

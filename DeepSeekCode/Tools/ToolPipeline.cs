@@ -205,16 +205,20 @@ public class PermissionPipelineFilter : IToolPipelineFilter
 {
     private readonly Services.PermissionManager _permissionManager;
     private readonly Func<string, string, Task<Services.PermissionDecision?>>? _userPromptCallback;
+    private readonly bool _forceAsk;
 
     public string Name => "Permission";
     public int Priority => 10;
 
+    /// <param name="forceAsk">为 true 时，即使权限规则为 Allow 也弹出对话框确认（用于工作区外路径等场景）</param>
     public PermissionPipelineFilter(
         Services.PermissionManager permissionManager,
-        Func<string, string, Task<Services.PermissionDecision?>>? userPromptCallback = null)
+        Func<string, string, Task<Services.PermissionDecision?>>? userPromptCallback = null,
+        bool forceAsk = false)
     {
         _permissionManager = permissionManager;
         _userPromptCallback = userPromptCallback;
+        _forceAsk = forceAsk;
     }
 
     public async Task<bool> OnBeforeExecuteAsync(ToolCallContext context)
@@ -224,11 +228,11 @@ public class PermissionPipelineFilter : IToolPipelineFilter
 
         switch (level)
         {
-            case Services.PermissionLevel.Allow:
-                return true;
             case Services.PermissionLevel.Deny:
                 return false;
-            case Services.PermissionLevel.Ask:
+            case Services.PermissionLevel.Allow when !_forceAsk:
+                return true;
+            default: // Ask，或 Allow 被 forceAsk 覆盖
                 if (_userPromptCallback != null)
                 {
                     var decision = await _userPromptCallback(context.ToolName, command ?? context.ToolName);
@@ -237,8 +241,6 @@ public class PermissionPipelineFilter : IToolPipelineFilter
                     return decision == Services.PermissionDecision.AllowOnce
                         || decision == Services.PermissionDecision.AllowAll;
                 }
-                return true;
-            default:
                 return true;
         }
     }

@@ -84,7 +84,13 @@ public class TodoWriteTool : ITool
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
                 if (parsed != null)
-                    todos = parsed;
+                {
+                    // 过滤空 content 的任务项 + 安全上限 100 条
+                    todos = parsed
+                        .Where(t => !string.IsNullOrWhiteSpace(t.Content))
+                        .Take(100)
+                        .ToList();
+                }
             }
             catch (Exception ex)
             {

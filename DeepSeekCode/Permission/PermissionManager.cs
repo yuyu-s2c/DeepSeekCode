@@ -107,6 +107,20 @@ public class PermissionManager
             Description = "查看 Git 历史是只读操作"
         });
 
+        // Plan 模式工具始终允许
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "enter_plan_mode",
+            Level = PermissionLevel.Allow,
+            Description = "进入 Plan 模式"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "exit_plan_mode",
+            Level = PermissionLevel.Allow,
+            Description = "退出 Plan 模式"
+        });
+
         // Git commit 需要确认
         _rules.Add(new PermissionRule
         {
@@ -145,9 +159,65 @@ public class PermissionManager
         _rules.Add(new PermissionRule
         {
             ToolName = "shell",
+            Pattern = "rmdir",
+            Level = PermissionLevel.Deny,
+            Description = "rmdir 删除目录命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "rd",
+            Level = PermissionLevel.Deny,
+            Description = "rd 删除目录命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
             Pattern = "format",
             Level = PermissionLevel.Deny,
             Description = "format 格式化命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "shutdown",
+            Level = PermissionLevel.Deny,
+            Description = "shutdown 关机命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "restart",
+            Level = PermissionLevel.Deny,
+            Description = "restart 重启命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "taskkill",
+            Level = PermissionLevel.Deny,
+            Description = "taskkill 终止进程命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "reg",
+            Level = PermissionLevel.Deny,
+            Description = "reg 注册表操作默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "takeown",
+            Level = PermissionLevel.Deny,
+            Description = "takeown 接管所有权命令默认禁止"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "shell",
+            Pattern = "icacls",
+            Level = PermissionLevel.Deny,
+            Description = "icacls 权限修改命令默认禁止"
         });
 
         // 写文件工具需要询问
@@ -168,6 +238,20 @@ public class PermissionManager
             ToolName = "shell",
             Level = PermissionLevel.Ask,
             Description = "Shell 命令需要确认"
+        });
+
+        // 子代理和任务管理始终允许（自身有权限控制）
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "task",
+            Level = PermissionLevel.Allow,
+            Description = "子代理任务（自身有独立权限控制）"
+        });
+        _rules.Add(new PermissionRule
+        {
+            ToolName = "todo_write",
+            Level = PermissionLevel.Allow,
+            Description = "任务列表管理"
         });
     }
 

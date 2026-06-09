@@ -13,6 +13,12 @@ public class ShellTool : ITool
         "taskkill", "reg", "takeown", "icacls"
     };
 
+    /// <summary>正则：匹配整词的危险命令（支持管道/分号分隔场景）</summary>
+    private static readonly System.Text.RegularExpressions.Regex DangerousCmdRegex = new(
+        @"\b(rm|del|rmdir|rd|format|shutdown|restart|taskkill|reg|takeown|icacls)\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase,
+        TimeSpan.FromMilliseconds(100));
+
     private static readonly HashSet<string> ReadOnlyCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "ls", "dir", "cat", "type", "echo", "git", "dotnet", "npm",
@@ -64,7 +70,11 @@ public class ShellTool : ITool
             return "错误: 命令不能为空";
 
         var firstWord = command.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        // 首词黑名单检查（兼容权限系统）
         var isDangerous = DangerousCommands.Contains(firstWord);
+        // 全命令整词扫描（防御管道/分号绕过：echo && rm -rf /）
+        if (!isDangerous)
+            isDangerous = DangerousCmdRegex.IsMatch(command);
 
         var processInfo = new ProcessStartInfo
         {

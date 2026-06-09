@@ -124,6 +124,9 @@ public class FileEditTool : ITool
         var newString = ToolArgHelper.ArgString(arguments, "newString") ?? "";
         var replaceAll = ToolArgHelper.ArgBool(arguments, "replaceAll");
 
+        if (string.IsNullOrWhiteSpace(oldString))
+            return Task.FromResult("错误: oldString 不能为空");
+
         if (!File.Exists(filePath))
             return Task.FromResult($"错误: 文件不存在 '{filePath}'");
 
@@ -135,24 +138,39 @@ public class FileEditTool : ITool
             if (index == -1)
                 return Task.FromResult("错误: 在文件中未找到要替换的原文本");
 
+            if (index != oldContent.LastIndexOf(oldString, StringComparison.Ordinal) && !replaceAll)
+                return Task.FromResult("错误: oldString 在文件中出现多次，匹配不唯一。请提供更多上下文使匹配唯一，或设置 replaceAll=true");
+
             string newContent;
             if (replaceAll)
             {
-                var count = 0;
-                var temp = oldContent;
-                while (temp.Contains(oldString))
+                // 防死循环：oldString 是 newString 子串时直接使用 string.Replace（一次完成）
+                if (newString.Contains(oldString, StringComparison.Ordinal))
                 {
-                    var i = temp.IndexOf(oldString, StringComparison.Ordinal);
-                    temp = temp[..i] + newString + temp[(i + oldString.Length)..];
-                    count++;
+                    newContent = oldContent.Replace(oldString, newString, StringComparison.Ordinal);
                 }
-                newContent = temp;
+                else
+                {
+                    var count = 0;
+                    var temp = oldContent;
+                    while (temp.Contains(oldString))
+                    {
+                        var i = temp.IndexOf(oldString, StringComparison.Ordinal);
+                        temp = temp[..i] + newString + temp[(i + oldString.Length)..];
+                        count++;
+                        // 安全上限：防止逻辑意外导致死循环
+                        if (count > 10000)
+                            return Task.FromResult("错误: 替换次数超过安全上限（10000 次），操作取消");
+                    }
+                    newContent = temp;
+                }
+                var replacementCount = ToolArgHelper.CountReplacements(oldContent, newContent, oldString);
                 File.WriteAllText(filePath, newContent);
 
                 var diff = DiffRenderer.FormatTextDiff(oldContent, newContent, Path.GetFileName(filePath));
                 return Task.FromResult(string.IsNullOrEmpty(diff)
-                    ? $"替换成功，共替换了 {count} 处"
-                    : $"替换成功，共替换了 {count} 处\n\n{diff}");
+                    ? $"替换成功，共替换了 {replacementCount} 处"
+                    : $"替换成功，共替换了 {replacementCount} 处\n\n{diff}");
             }
             else
             {
@@ -175,7 +193,7 @@ public class FileEditTool : ITool
 public class FileWriteTool : ITool
 {
     public string Name => "write_file";
-    public string Description => "Writes a file to the local filesystem, overwriting if one exists.\n- filePath must be an absolute path.\n- Parent directories are created automatically if they don't exist.\n- Overwriting an existing file you haven't read will be blocked — you must Read it first to confirm you know what you are replacing.\n- Prefer edit_file for targeted changes. Use this tool only when creating a new file or doing a full-content rewrite of a file you've already read.\n- This tool will overwrite the existing file if there is one at the provided path without prompting — double-check filePath before calling.";
+    public string Description => "Writes a file to the local filesystem, overwriting if one exists.\n- filePath must be an absolute path.\n- Parent directories are created automatically if they don't exist.\n- Prefer edit_file for targeted changes. Use this tool only when creating a new file or doing a full-content rewrite of a file you've already read.\n- This tool will overwrite the existing file if there is one at the provided path without prompting — double-check filePath before calling.";
 
     public ParameterSchema Parameters => new()
     {
@@ -348,7 +366,9 @@ public class GrepTool : ITool
                 return Task.FromResult($"错误: 目录不存在 '{basePath}'");
 
             var results = new System.Text.StringBuilder();
-            var regex = new System.Text.RegularExpressions.Regex(pattern);
+            var regex = new System.Text.RegularExpressions.Regex(pattern,
+                System.Text.RegularExpressions.RegexOptions.None,
+                TimeSpan.FromSeconds(5));
             var files = System.IO.Directory.GetFiles(basePath, includeFilter,
                 SearchOption.AllDirectories)
                 .Take(100);
@@ -375,6 +395,7 @@ public class GrepTool : ITool
                 }
                 catch (IOException) { /* 跳过无法读取的文件 */ }
                 catch (UnauthorizedAccessException) { /* 跳过无权限的文件 */ }
+                catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { /* 正则超时，跳过 */ }
             }
 
             if (foundCount == 0)
@@ -394,6 +415,47 @@ public class GrepTool : ITool
 /// </summary>
 internal static class ToolArgHelper
 {
+    /// <summary>
+    /// 验证路径是否在当前工作区内（防止路径遍历攻击）
+    /// </summary>
+    public static bool ValidatePath(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return false;
+
+        try
+        {
+            var fullPath = Path.GetFullPath(rawPath);
+            var workspace = Path.GetFullPath(Environment.CurrentDirectory);
+
+            return fullPath.StartsWith(workspace + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fullPath, workspace, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false; // 路径格式无效
+        }
+    }
+
+    /// <summary>
+    /// 计算替换次数（用于 edit_file 显示）
+    /// </summary>
+    public static int CountReplacements(string oldContent, string newContent, string oldString)
+    {
+        if (string.IsNullOrEmpty(oldString))
+            return 0;
+
+        // 如果源和目标长度相同，比较字符级差异
+        // 否则通过 oldString 在原内容中的出现次数估算
+        var count = 0;
+        var idx = 0;
+        while ((idx = oldContent.IndexOf(oldString, idx, StringComparison.Ordinal)) != -1)
+        {
+            count++;
+            idx += oldString.Length;
+        }
+        return count;
+    }
     public static string? ArgString(Dictionary<string, object?> args, string key)
     {
         if (!args.TryGetValue(key, out var val) || val == null) return null;

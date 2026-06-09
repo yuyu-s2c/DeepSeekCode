@@ -252,6 +252,18 @@ When the conversation grows beyond the context window limit, older messages are 
         var memoryCtx = _memoryService.BuildMemoryContext();
         if (memoryCtx != null)
             _conversation.AppendSystemContext(memoryCtx);
+
+        // 缓存友好：项目文件注入在会话初始化时写入 _messages 固定位置
+        // （所有初始 system 消息之后、第一条 user 消息之前）
+        // 这样注入内容成为缓存前缀的一部分，每次请求均可命中，而非每次追加到末尾导致 miss
+        var projectRoot = _workspaceService.WorkspacePath;
+        if (!string.IsNullOrWhiteSpace(projectRoot))
+        {
+            var injection = FileInjectionStrategy
+                .GenerateInjectionPromptAsync(projectRoot).GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(injection))
+                _conversation.AppendSystemContext(injection);
+        }
     }
 
     private string? GetGitStatusContext()

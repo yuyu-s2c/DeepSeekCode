@@ -214,6 +214,10 @@ public partial class MainWindow
         {
             UpdateToolCardComplete(tc.Id, success, elapsed, result);
             UpdateSpinnerText($"✔ {tc.Function.Name} 完成");
+
+            // Plan 模式工具执行后同步状态（注入提示词 + 更新 UI）
+            if (tc.Function.Name is "enter_plan_mode" or "exit_plan_mode")
+                SyncPlanMode();
         });
 
         await Dispatcher.Yield();
@@ -267,22 +271,49 @@ public partial class MainWindow
 
         var pipeline = new ToolPipeline(tool, _workspaceService);
 
+        // Plan 模式：write_file / edit_file 仅限计划文件，自动放行无需询问
+        var isPlanFileWrite = _planMode.IsActive
+            && (toolName == "write_file" || toolName == "edit_file")
+            && args.TryGetValue("filePath", out var fp)
+            && string.Equals(fp?.ToString(), _planMode.PlanFilePath, StringComparison.OrdinalIgnoreCase);
+
+        // 工作区外路径检测：用于文件/搜索工具跨工作区操作时强制询问用户
+        var isOutsideWorkspace = (toolName is "read_file" or "write_file" or "edit_file" or "glob" or "grep")
+            && TryGetPathArg(toolName, args) is { } toolPath
+            && !string.IsNullOrWhiteSpace(toolPath)
+            && !ToolArgHelper.ValidatePath(toolPath);
+
         pipeline.AddFilter(new PermissionPipelineFilter(_permissionManager,
             async (name, command) =>
             {
+                // Plan 模式写入计划文件：自动允许
+                if (isPlanFileWrite)
+                    return PermissionDecision.AllowOnce;
+
                 var task = await Dispatcher.InvokeAsync(() =>
                 {
-                    var dialog = new PermissionDialog(name, command) { Owner = this };
+                    var label = isOutsideWorkspace
+                        ? $"⚠️ 工作区外路径: {command}"
+                        : command;
+                    var dialog = new PermissionDialog(name, label) { Owner = this };
                     dialog.ShowDialog();
                     return dialog.Decision;
                 });
                 return task;
-            }));
+            },
+            forceAsk: isOutsideWorkspace));
 
         pipeline.AddFilter(new LoggingFilter(msg => _logger.Info(msg)));
         pipeline.AddFilter(new TimeoutFilter(60000));
 
         return pipeline;
+    }
+
+    /// <summary>从工具参数中提取路径参数（filePath 或 path）</summary>
+    private static string? TryGetPathArg(string toolName, Dictionary<string, object?> args)
+    {
+        var key = toolName is "glob" or "grep" ? "path" : "filePath";
+        return args.TryGetValue(key, out var val) ? val?.ToString() : null;
     }
 
     private static Dictionary<string, object?> TryParseArguments(string json)

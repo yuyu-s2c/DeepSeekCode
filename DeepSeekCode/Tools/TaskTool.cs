@@ -58,6 +58,10 @@ public class TaskTool : ITool
         var subagentType = arguments.TryGetValue("subagent_type", out var t)
             ? t?.ToString()?.ToLowerInvariant() ?? "explore" : "explore";
 
+        // 白名单校验：仅允许 explore 和 general
+        if (subagentType is not "explore" and not "general")
+            subagentType = "explore";
+
         if (string.IsNullOrWhiteSpace(prompt))
             return "错误: prompt 参数不能为空";
 

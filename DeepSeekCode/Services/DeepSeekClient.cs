@@ -57,15 +57,17 @@ public class DeepSeekClient : IDisposable
         if (tools.Count > 0)
             requestBody["tools"] = tools;
 
-        // Thinking 模式: adaptive 让模型自行判断是否需要思考
-        var thinkingType = config.ThinkingEnabled ? "adaptive" : "disabled";
+        // Thinking 模式：enabled 开启 / disabled 关闭（参考 api-docs.deepseek.com/guides/thinking_mode）
+        // 缓存说明：DeepSeek Context Caching 基于 messages 内容前缀匹配（参考 api-docs.deepseek.com/guides/kv_cache），
+        // 请求参数不影响缓存键。Thinking 模式切换时缓存自然失效（语义变化），同一模式内参数结构保持稳定。
+        var thinkingType = config.ThinkingEnabled ? "enabled" : "disabled";
         requestBody["thinking"] = new { type = thinkingType };
 
-        // adaptive 模式下仍可传 reasoning_effort 作为偏好提示
+        // Thinking 开启时传入 reasoning_effort 控制推理深度（high/max）
         if (config.ThinkingEnabled && !string.IsNullOrEmpty(config.ReasoningEffort))
             requestBody["reasoning_effort"] = config.ReasoningEffort;
 
-        // 生成参数（Thinking 模式下无效但发送不报错）
+        // 生成参数（Thinking 模式下 API 忽略这些参数，不发送以保持请求体整洁）
         if (!config.ThinkingEnabled)
         {
             requestBody["temperature"] = config.Temperature;

@@ -109,9 +109,15 @@ public class ConversationManager
         }
 
         // 注入额外 system context（Plan 模式提示词等）
+        // 缓存友好：插入到最后一个初始 system 消息之后（固定位置），而非追加到末尾
+        // 这样 Plan 模式提示词始终在对话历史之前，保持缓存前缀稳定
         if (!string.IsNullOrWhiteSpace(_extraSystemContext))
         {
-            snapshot.Add(ChatMessage.CreateSystem(_extraSystemContext));
+            var lastSystemIdx = snapshot.FindLastIndex(m => m.Role == "system");
+            if (lastSystemIdx >= 0)
+                snapshot.Insert(lastSystemIdx + 1, ChatMessage.CreateSystem(_extraSystemContext));
+            else
+                snapshot.Insert(0, ChatMessage.CreateSystem(_extraSystemContext));
         }
 
         return snapshot;
