@@ -19,6 +19,19 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        try
+        {
+            RunStartup();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"启动失败: {ex}", "DeepSeek Code", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+        }
+    }
+
+    private void RunStartup()
+    {
         // ── 1. 配置服务 ──
         var configService = new ConfigService();
 

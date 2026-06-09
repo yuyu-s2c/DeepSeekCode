@@ -253,7 +253,7 @@ public class FileInjectionStrategy : IContextStrategy
                 var path = Path.Combine(projectRoot, pattern.Replace('/', Path.DirectorySeparatorChar));
                 if (File.Exists(path))
                 {
-                    var content = await File.ReadAllTextAsync(path);
+                    var content = await File.ReadAllTextAsync(path).ConfigureAwait(false);
                     if (content.Length > 3000)
                         content = content[..3000] + "\n...(内容已截断)";
                     sb.AppendLine($"### {Path.GetFileName(path)}");
@@ -273,7 +273,7 @@ public class FileInjectionStrategy : IContextStrategy
                     var ext = Path.GetExtension(file).ToLower();
                     if (KeyExtensions.Contains(ext) && !KeyFilePatterns.Select(Path.GetFileName).Contains(Path.GetFileName(file)))
                     {
-                        var content = await File.ReadAllTextAsync(file);
+                        var content = await File.ReadAllTextAsync(file).ConfigureAwait(false);
                         if (content.Length > 2000)
                             content = content[..2000] + "\n...(内容已截断)";
                         var fileName = Path.GetFileName(file);
