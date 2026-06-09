@@ -2,7 +2,7 @@
 
 > Windows 桌面 AI 编程助手，深度适配 DeepSeek V4 Pro
 
-DeepSeek Code 是一个基于 WPF 的本地 AI Agent，对标 Claude Code，专为 DeepSeek API 设计。支持流式对话、工具调用、Thinking 模式、上下文缓存优化等完整功能。
+DeepSeek Code 是一个基于 WPF 的本地 AI Agent，专为 DeepSeek API 设计。支持流式对话、工具调用、Thinking 模式、上下文缓存优化等完整功能。
 
 ## 特性
 
