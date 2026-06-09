@@ -30,6 +30,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="DeepSeekCode.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="Resources\js\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
