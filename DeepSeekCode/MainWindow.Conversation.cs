@@ -277,12 +277,6 @@ public partial class MainWindow
             && args.TryGetValue("filePath", out var fp)
             && string.Equals(fp?.ToString(), _planMode.PlanFilePath, StringComparison.OrdinalIgnoreCase);
 
-        // 工作区外路径检测：用于文件/搜索工具跨工作区操作时强制询问用户
-        var isOutsideWorkspace = (toolName is "read_file" or "write_file" or "edit_file" or "glob" or "grep")
-            && TryGetPathArg(toolName, args) is { } toolPath
-            && !string.IsNullOrWhiteSpace(toolPath)
-            && !ToolArgHelper.ValidatePath(toolPath);
-
         pipeline.AddFilter(new PermissionPipelineFilter(_permissionManager,
             async (name, command) =>
             {
@@ -292,28 +286,17 @@ public partial class MainWindow
 
                 var task = await Dispatcher.InvokeAsync(() =>
                 {
-                    var label = isOutsideWorkspace
-                        ? $"⚠️ 工作区外路径: {command}"
-                        : command;
-                    var dialog = new PermissionDialog(name, label) { Owner = this };
+                    var dialog = new PermissionDialog(name, command) { Owner = this };
                     dialog.ShowDialog();
                     return dialog.Decision;
                 });
                 return task;
-            },
-            forceAsk: isOutsideWorkspace));
+            }));
 
         pipeline.AddFilter(new LoggingFilter(msg => _logger.Info(msg)));
         pipeline.AddFilter(new TimeoutFilter(60000));
 
         return pipeline;
-    }
-
-    /// <summary>从工具参数中提取路径参数（filePath 或 path）</summary>
-    private static string? TryGetPathArg(string toolName, Dictionary<string, object?> args)
-    {
-        var key = toolName is "glob" or "grep" ? "path" : "filePath";
-        return args.TryGetValue(key, out var val) ? val?.ToString() : null;
     }
 
     private static Dictionary<string, object?> TryParseArguments(string json)

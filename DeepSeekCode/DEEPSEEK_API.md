@@ -129,5 +129,5 @@
 | Cache 状态读取 | ✅ | TokenUsage 模型解析 usage，含 prompt_cache_hit_tokens。状态栏显示缓存命中率 |
 | V4 模型迁移 | ✅ | 默认模型已是 `deepseek-v4-pro`，旧名 deepseek-chat 已全部替换 |
 | Context Caching 优化 | ✅ | FileInjection/PlanMode 上下文固定前缀位置，缓存命中率优化 |
-| 路径安全 | ✅ | 工作区外路径强制弹窗确认（forceAsk），工作区内正常权限规则 |
+| 路径安全 | ✅ | 工具允许访问工作区外目录，无额外限制 |
 | Shell 命令黑名单 | ✅ | 11 条 Deny 规则（rm/del/rmdir/rd/format/shutdown/restart/taskkill/reg/takeown/icacls），全命令整词扫描 |

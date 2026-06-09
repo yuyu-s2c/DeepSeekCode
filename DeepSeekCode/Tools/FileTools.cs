@@ -416,28 +416,6 @@ public class GrepTool : ITool
 internal static class ToolArgHelper
 {
     /// <summary>
-    /// 验证路径是否在当前工作区内（防止路径遍历攻击）
-    /// </summary>
-    public static bool ValidatePath(string rawPath)
-    {
-        if (string.IsNullOrWhiteSpace(rawPath))
-            return false;
-
-        try
-        {
-            var fullPath = Path.GetFullPath(rawPath);
-            var workspace = Path.GetFullPath(Environment.CurrentDirectory);
-
-            return fullPath.StartsWith(workspace + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fullPath, workspace, StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false; // 路径格式无效
-        }
-    }
-
-    /// <summary>
     /// 计算替换次数（用于 edit_file 显示）
     /// </summary>
     public static int CountReplacements(string oldContent, string newContent, string oldString)
