@@ -17,7 +17,7 @@ public class StatusViewModel : INotifyPropertyChanged
     private int _cacheMissTokens;
     private int _reasoningTokens;
     private int _contextTokens;
-    private const int MaxContext = 900_000;
+    private const int MaxContext = 1_000_000; // DeepSeek V4 实际上下文窗口
 
     public string Model
     {
@@ -74,7 +74,7 @@ public class StatusViewModel : INotifyPropertyChanged
     }
 
     public string TokenDisplay => _cacheHitTokens > 0
-        ? $"Token: {TokenCount:N0} | 🔥 命中: {CacheHitTokens:N0} ({CacheHitRatio:F0}%)"
+        ? $"Token: {CacheHitTokens + CacheMissTokens:N0} | 🔥 命中: {CacheHitRatio:F0}%"
         : $"Token: {TokenCount:N0}";
 
     /// <summary>缓存命中率（百分比）</summary>
@@ -94,7 +94,7 @@ public class StatusViewModel : INotifyPropertyChanged
             if (_contextTokens <= 0) return "";
             var pct = (double)_contextTokens / MaxContext * 100;
             var k = _contextTokens / 1000.0;
-            return $"📐 ctx: {pct:F0}% ({k:F0}k / 1M)";
+            return $"📐 ctx: {pct:F0}% ({k:F1}k / 1M)";
         }
     }
 
