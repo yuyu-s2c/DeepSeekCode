@@ -186,7 +186,7 @@ body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;backg
 <script>
 marked.setOptions({breaks:true,gfm:true});
 
-let aiBlock=null,thinkBlock=null;
+let aiBlock=null,thinkBlock=null,renderPending=false;
 
 function protectMath(t){try{var m={},n=0;t=t.replace(/\$\$([\s\S]*?)\$\$/g,function(x){var k='%%M'+ ++n +'%%';m[k]=x;return k});t=t.replace(/\$([^$\n]+)\$/g,function(x){var k='%%M'+ ++n +'%%';m[k]=x;return k});return{text:t,map:m}}catch(e){return{text:t,map:{}}}}
 function restoreMath(h,m){try{for(var k in m)h=h.split(k).join(m[k]);return h}catch(e){return h}}
@@ -203,7 +203,21 @@ function appendUserMessage(t){aiBlock=null;thinkBlock=null;var d=document.create
 
 function appendAiContent(t){var p=protectMath(t);aiBlock=document.createElement('div');aiBlock.className='ai-content';aiBlock.innerHTML=restoreMath(marked.parse(p.text),p.map);document.getElementById('chat').appendChild(aiBlock);highlightAllCode(aiBlock);renderMath(aiBlock);scrollToBottom()}
 
-function updateAiContent(t){if(!aiBlock){appendAiContent(t);return}var p=protectMath(t);aiBlock.innerHTML=restoreMath(marked.parse(p.text),p.map);highlightAllCode(aiBlock);renderMath(aiBlock);scrollToBottom()}
+function updateAiContent(t){
+    if(!aiBlock){appendAiContent(t);return}
+    // 使用 requestAnimationFrame 合并高频更新，避免阻塞主线程
+    if(renderPending) return;
+    renderPending = true;
+    var text = t; // 捕获当前值
+    requestAnimationFrame(function(){
+        renderPending = false;
+        var p = protectMath(text);
+        aiBlock.innerHTML = restoreMath(marked.parse(p.text), p.map);
+        highlightAllCode(aiBlock);
+        renderMath(aiBlock);
+        scrollToBottom();
+    });
+}
 
 function appendToolCard(id,name,param){var d=document.createElement('div');d.className='tool-card';d.id='tc-'+id;d.innerHTML=`<div class=""header""><span class=""name"">⣾ ${name}</span><span class=""param"">${param||''}</span><span class=""time"">⏱ ...</span></div><div class=""result""></div>`;document.getElementById('chat').appendChild(d);scrollToBottom()}
 

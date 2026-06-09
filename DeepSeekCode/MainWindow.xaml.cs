@@ -50,6 +50,10 @@ public partial class MainWindow : Window
     private readonly StringBuilder _aiStreamBuffer = new();
     private Logger _logger = null!;
 
+    // WebView2 渲染节流：避免高频重渲染（每 50ms 最多一次）
+    private readonly System.Diagnostics.Stopwatch _renderThrottle = System.Diagnostics.Stopwatch.StartNew();
+    private const int RenderThrottleMs = 50;
+
     // 输入历史
     private readonly List<string> _inputHistory = new();
     private int _historyIndex = -1;

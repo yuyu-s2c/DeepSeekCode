@@ -311,6 +311,12 @@ public partial class MainWindow
     private void AppendStreamText(string text)
     {
         _aiStreamBuffer.Append(text);
+
+        // 渲染节流：每 50ms 最多触发一次 WebView2 更新，避免高频重渲染
+        if (_renderThrottle.ElapsedMilliseconds < RenderThrottleMs && _iterationFirstContent == false)
+            return;
+        _renderThrottle.Restart();
+
         if (_iterationFirstContent)
         {
             _iterationFirstContent = false;
@@ -326,6 +332,11 @@ public partial class MainWindow
 
     private void FlushCurrentAiParagraph()
     {
+        // 流式输出结束，确保最后一批文本已渲染到 WebView2
+        if (_aiStreamBuffer.Length > 0 && !_iterationFirstContent)
+        {
+            _ = _chatRenderer.UpdateAiContent(_aiStreamBuffer.ToString());
+        }
     }
 
     private void AppendToolCards(List<ToolCall> toolCalls)
