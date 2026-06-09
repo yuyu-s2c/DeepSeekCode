@@ -45,12 +45,6 @@ public class AppConfig
     [JsonPropertyName("enableJsonOutput")]
     public bool EnableJsonOutput { get; set; } = false;
 
-    [JsonPropertyName("enablePrefixCompletion")]
-    public bool EnablePrefixCompletion { get; set; } = false;
-
-    [JsonPropertyName("prefixContent")]
-    public string PrefixContent { get; set; } = "";
-
     // ── 工作区记忆 ──
 
     [JsonPropertyName("lastWorkspacePath")]

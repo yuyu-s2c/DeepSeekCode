@@ -211,28 +211,12 @@
                     <TextBlock Text="强制模型以 JSON 格式输出（需在 prompt 中说明格式）"
                                Foreground="{StaticResource PrimaryLightBrush}" FontSize="11" Margin="24,0,0,16"/>
 
-                    <CheckBox x:Name="PrefixCompletionToggle" Content="Chat Prefix Completion（Beta）"
-                              Foreground="{StaticResource PrimaryDarkBrush}" FontSize="14" Margin="0,0,0,8"
-                              Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
-                    <TextBlock Text="模型从指定前缀继续生成内容"
-                               Foreground="{StaticResource PrimaryLightBrush}" FontSize="11" Margin="24,0,0,8"/>
-                    <TextBox x:Name="PrefixContentBox"
-                             Background="White" Foreground="{StaticResource PrimaryDarkBrush}"
-                             BorderThickness="0" Height="60" FontSize="13"
-                             TextWrapping="Wrap"
-                             AcceptsReturn="True"
-                             VerticalScrollBarVisibility="Auto"
-                             Padding="8,4" Margin="24,0,0,16"
-                             ToolTip="输入模型应继续的前缀文本"/>
-
                     <Border Background="White" CornerRadius="6" Padding="12,10" Margin="0,8,0,0">
                         <StackPanel>
                             <TextBlock Foreground="{StaticResource PrimaryLightBrush}" FontSize="12" TextWrapping="Wrap"
                                        Text="功能状态："/>
                             <TextBlock Foreground="{StaticResource PrimaryBlueBrush}" FontSize="12" Margin="0,4,0,0"
                                        Text="✅ JSON Output · ✅ Tool Calls · ✅ Context Caching"/>
-                            <TextBlock Foreground="{StaticResource WarningOrangeBrush}" FontSize="12" Margin="0,2,0,0"
-                                       Text="⚠ Chat Prefix Completion (Beta)"/>
                             <TextBlock Foreground="{StaticResource WarningOrangeBrush}" FontSize="12" Margin="0,2,0,0"
                                        Text="⚠ FIM Completion (Beta, 仅 Non-Thinking)"/>
                         </StackPanel>

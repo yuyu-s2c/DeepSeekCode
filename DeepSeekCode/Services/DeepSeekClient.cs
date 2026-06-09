@@ -78,10 +78,6 @@ public class DeepSeekClient : IDisposable
         if (config.EnableJsonOutput)
             requestBody["response_format"] = new { type = "json_object" };
 
-        // Chat Prefix Completion
-        if (config.EnablePrefixCompletion && !string.IsNullOrWhiteSpace(config.PrefixContent))
-            requestBody["prefix"] = config.PrefixContent;
-
         var json = JsonSerializer.Serialize(requestBody, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 

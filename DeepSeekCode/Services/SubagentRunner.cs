@@ -127,8 +127,6 @@ public class SubagentRunner
             FrequencyPenalty = main.FrequencyPenalty,
             PresencePenalty = main.PresencePenalty,
             EnableJsonOutput = false,
-            EnablePrefixCompletion = false,
-            PrefixContent = ""
         };
     }
 

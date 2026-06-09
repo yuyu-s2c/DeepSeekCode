@@ -63,8 +63,6 @@ public partial class SettingsWindow : Window
 
         // Beta
         JsonOutputToggle.IsChecked = config.EnableJsonOutput;
-        PrefixCompletionToggle.IsChecked = config.EnablePrefixCompletion;
-        PrefixContentBox.Text = config.PrefixContent;
 
         _suppressEvents = false;
         _credentialsChanged = false;
@@ -151,8 +149,6 @@ public partial class SettingsWindow : Window
 
         // Beta
         config.EnableJsonOutput = JsonOutputToggle.IsChecked == true;
-        config.EnablePrefixCompletion = PrefixCompletionToggle.IsChecked == true;
-        config.PrefixContent = PrefixContentBox.Text.Trim();
 
         _configService.Save(config);
         _eventBus?.Publish(new ConfigChangedEvent

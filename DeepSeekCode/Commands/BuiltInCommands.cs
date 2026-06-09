@@ -235,7 +235,6 @@ public class ConfigCommand : ISlashCommand
         ["presencePenalty"] = ("存在惩罚", "-2.0 到 2.0"),
         ["apiBaseUrl"] = ("API 地址", "DeepSeek API 基地址"),
         ["enableJsonOutput"] = ("JSON 输出", "true 或 false"),
-        ["enablePrefixCompletion"] = ("前缀补全", "true 或 false"),
     };
 
     public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
@@ -302,7 +301,6 @@ public class ConfigCommand : ISlashCommand
         "presencePenalty" => config.PresencePenalty.ToString("F1"),
         "apiBaseUrl" => config.ApiBaseUrl,
         "enableJsonOutput" => config.EnableJsonOutput.ToString().ToLower(),
-        "enablePrefixCompletion" => config.EnablePrefixCompletion.ToString().ToLower(),
         _ => "(未知)"
     };
 
@@ -361,11 +359,6 @@ public class ConfigCommand : ISlashCommand
                 if (!bool.TryParse(value, out var json))
                     return "请输入 true 或 false";
                 config.EnableJsonOutput = json;
-                break;
-            case "enablePrefixCompletion":
-                if (!bool.TryParse(value, out var prefix))
-                    return "请输入 true 或 false";
-                config.EnablePrefixCompletion = prefix;
                 break;
             default:
                 return $"不支持的配置项 '{key}'";
