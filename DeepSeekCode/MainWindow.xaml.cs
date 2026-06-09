@@ -80,6 +80,23 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // 从嵌入资源加载窗口图标（XAML Icon 在单文件发布中有兼容性问题）
+        try
+        {
+            var iconUri = new Uri("pack://application:,,,/DeepSeekCode.ico");
+            var streamInfo = Application.GetResourceStream(iconUri);
+            if (streamInfo != null)
+            {
+                using (streamInfo.Stream)
+                {
+                    Icon = System.Windows.Media.Imaging.BitmapFrame.Create(
+                        streamInfo.Stream, System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,
+                        System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+                }
+            }
+        }
+        catch { /* 图标加载失败不影响功能 */ }
+
         _locator = locator;
         _eventBus = locator.Resolve<EventBus>();
         _configService = locator.Resolve<ConfigService>();

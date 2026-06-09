@@ -6,7 +6,6 @@
         Height="800" Width="1100"
         MinHeight="500" MinWidth="700"
         WindowStartupLocation="CenterScreen"
-        Icon="DeepSeekCode.ico"
         Background="White"
         PreviewKeyDown="Window_PreviewKeyDown">
 
