@@ -30,7 +30,7 @@ dotnet publish -p:PublishSingleFile=true -c Release -o ./publish
 
 ### 直接下载
 
-从 [Releases](https://github.com/yuyu-s2c/DeepSeekCode/releases) 下载 `DeepSeekCode.exe`，双击运行。
+从 Releases 页面下载 `DeepSeekCode.exe`，双击运行。
 
 ### 使用
 
