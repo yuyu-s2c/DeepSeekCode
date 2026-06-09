@@ -16,6 +16,8 @@ public class StatusViewModel : INotifyPropertyChanged
     private int _cacheHitTokens;
     private int _cacheMissTokens;
     private int _reasoningTokens;
+    private int _contextTokens;
+    private const int MaxContext = 900_000;
 
     public string Model
     {
@@ -27,6 +29,12 @@ public class StatusViewModel : INotifyPropertyChanged
     {
         get => _tokenCount;
         set { _tokenCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokenDisplay)); }
+    }
+
+    public int ContextTokens
+    {
+        get => _contextTokens;
+        set { _contextTokens = value; OnPropertyChanged(); OnPropertyChanged(nameof(ContextDisplay)); }
     }
 
     public int CacheHitTokens
@@ -68,6 +76,17 @@ public class StatusViewModel : INotifyPropertyChanged
     public string TokenDisplay => _cacheHitTokens > 0
         ? $"Token: {TokenCount:N0} | 缓存命中: {CacheHitTokens:N0}"
         : $"Token: {TokenCount:N0}";
+
+    public string ContextDisplay
+    {
+        get
+        {
+            if (_contextTokens <= 0) return "";
+            var pct = (double)_contextTokens / MaxContext * 100;
+            var k = _contextTokens / 1000.0;
+            return $"📐 ctx: {pct:F0}% ({k:F0}k / 1M)";
+        }
+    }
 
     public string StatusColor => IsStreaming ? "#4EC9B0" : "#808080";
 

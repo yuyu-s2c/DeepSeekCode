@@ -127,6 +127,12 @@ public class DeepSeekClient : IDisposable
 
     public Task<int> EstimateTokenCount(List<ChatMessage> messages)
     {
+        return Task.FromResult(EstimateTokenCountSync(messages));
+    }
+
+    /// <summary>同步估算 token（无需 API 调用，用于锁内快速计算）</summary>
+    public static int EstimateTokenCountSync(List<ChatMessage> messages)
+    {
         var total = 0;
         foreach (var msg in messages)
         {
@@ -138,7 +144,7 @@ public class DeepSeekClient : IDisposable
                     total += (int)Math.Ceiling(tc.Function.Arguments.Length / 2.5) + 10;
             }
         }
-        return Task.FromResult(total);
+        return total;
     }
 
     // ═══ FIM Completion (Beta) ═══
@@ -172,7 +178,12 @@ public class DeepSeekClient : IDisposable
         };
 
         using var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"FIM API 返回 {response.StatusCode}: {errorBody}");
+        }
 
         var responseJson = await response.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(responseJson);
@@ -181,6 +192,14 @@ public class DeepSeekClient : IDisposable
             return choices[0].GetProperty("text").GetString();
 
         return null;
+    }
+
+    /// <summary>运行时更新 API 凭据（无需重启应用）</summary>
+    public void UpdateCredentials(string apiKey, string apiBaseUrl)
+    {
+        _http.BaseAddress = new Uri(apiBaseUrl);
+        _http.DefaultRequestHeaders.Remove("Authorization");
+        _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
     }
 
     public void Dispose()

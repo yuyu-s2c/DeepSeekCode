@@ -80,19 +80,22 @@ public static class MarkdownRenderer
         }
     }
 
+    // Markdig.Wpf 代码块通常使用的等宽字体（用于代码块检测）
+    private static readonly string[] CodeFonts = ["Consolas", "monospace", "Cascadia", "Courier"];
+    private static readonly string[] CodeFontsLower = CodeFonts.Select(f => f.ToLowerInvariant()).ToArray();
+
     private static bool IsCodeParagraph(Paragraph para)
     {
-        return para.FontFamily?.Source?.Contains("Consolas") == true
-            || para.FontFamily?.Source?.Contains("monospace") == true
-            || para.FontFamily?.Source?.Contains("Cascadia") == true
-            || (para.Background != null && IsDarkBackground(para.Background));
+        var src = para.FontFamily?.Source?.ToLowerInvariant();
+        if (src != null && CodeFontsLower.Any(f => src.Contains(f)))
+            return true;
+        return para.Background != null && IsDarkBackground(para.Background);
     }
 
     private static bool IsCodeTextBlock(TextBlock tb)
     {
-        return tb.FontFamily?.Source?.Contains("Consolas") == true
-            || tb.FontFamily?.Source?.Contains("monospace") == true
-            || tb.FontFamily?.Source?.Contains("Cascadia") == true;
+        var src = tb.FontFamily?.Source?.ToLowerInvariant();
+        return src != null && CodeFontsLower.Any(f => src.Contains(f));
     }
 
     private static bool IsDarkBackground(Brush brush)

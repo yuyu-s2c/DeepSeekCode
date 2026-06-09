@@ -10,6 +10,7 @@ public class ConversationManager
     private readonly int _maxContextTokens;
     private readonly DeepSeekClient _client;
     private ContextStrategyOrchestrator? _contextOrchestrator;
+    private string? _extraSystemContext;
 
     public IReadOnlyList<ChatMessage> Messages
     {
@@ -26,6 +27,12 @@ public class ConversationManager
     public void SetContextStrategy(ContextStrategyOrchestrator orchestrator)
     {
         _contextOrchestrator = orchestrator;
+    }
+
+    /// <summary>设置额外的 system context（Plan 模式提示词等），传 null 清除</summary>
+    public void SetExtraSystemContext(string? context)
+    {
+        _extraSystemContext = context;
     }
 
     public void SetSystemPrompt(string prompt)
@@ -90,13 +97,21 @@ public class ConversationManager
         lock (_msgLock) snapshot = new List<ChatMessage>(_messages);
 
         if (_contextOrchestrator != null)
-            return await _contextOrchestrator.ProcessAsync(snapshot);
-
-        var tokenCount = await _client.EstimateTokenCount(snapshot);
-        if (tokenCount > _maxContextTokens)
+            snapshot = await _contextOrchestrator.ProcessAsync(snapshot);
+        else
         {
-            await TrimContextIfNeeded();
-            lock (_msgLock) return new List<ChatMessage>(_messages);
+            var tokenCount = await _client.EstimateTokenCount(snapshot);
+            if (tokenCount > _maxContextTokens)
+            {
+                await TrimContextIfNeeded();
+                lock (_msgLock) snapshot = new List<ChatMessage>(_messages);
+            }
+        }
+
+        // 注入额外 system context（Plan 模式提示词等）
+        if (!string.IsNullOrWhiteSpace(_extraSystemContext))
+        {
+            snapshot.Add(ChatMessage.CreateSystem(_extraSystemContext));
         }
 
         return snapshot;
@@ -104,26 +119,36 @@ public class ConversationManager
 
     private async Task TrimContextIfNeeded()
     {
+        List<ChatMessage> snapshot;
+        lock (_msgLock) snapshot = new List<ChatMessage>(_messages);
+
+        var tokenCount = EstimateQuick(snapshot);
+        if (tokenCount <= _maxContextTokens)
+            return;
+
         lock (_msgLock)
         {
             // 保存所有 system 消息
             var systemMsgs = _messages.Where(m => m.Role == "system").ToList();
             _messages.RemoveAll(m => m.Role == "system");
 
-            var tokenCount = EstimateQuick(_messages);
-            // 保留至少 2 条非 system 消息（首条用户消息 + 最后回复），不够就不裁
-            while (_messages.Count > 2 && tokenCount > _maxContextTokens)
-            {
-                // 从第 2 条开始删（保留第 1 条，即用户原始消息）
-                if (_messages.Count > 2)
-                    _messages.RemoveAt(1);
-                else
-                    break;
+            // 按完整轮次（user → assistant → tool results）分组裁剪
+            var rounds = SplitIntoRounds(_messages);
+            var minRounds = 2;
 
+            while (rounds.Count > minRounds)
+            {
                 tokenCount = EstimateQuick(_messages);
+                if (tokenCount <= _maxContextTokens) break;
+
+                // 删除最早的一轮
+                var oldestRound = rounds[0];
+                foreach (var msg in oldestRound)
+                    _messages.Remove(msg);
+                rounds.RemoveAt(0);
             }
 
-            // 恢复所有 system 消息在前面
+            // 恢复所有 system 消息
             _messages.InsertRange(0, systemMsgs);
         }
     }
@@ -131,18 +156,7 @@ public class ConversationManager
     /// <summary>快速估算 token（同步，无需 API 调用）</summary>
     private static int EstimateQuick(List<ChatMessage> messages)
     {
-        var total = 0;
-        foreach (var msg in messages)
-        {
-            if (msg.Content != null)
-                total += (int)Math.Ceiling(msg.Content.Length / 2.5);
-            if (msg.ToolCalls != null)
-            {
-                foreach (var tc in msg.ToolCalls)
-                    total += (int)Math.Ceiling(tc.Function.Arguments.Length / 2.5) + 10;
-            }
-        }
-        return total;
+        return DeepSeekClient.EstimateTokenCountSync(messages);
     }
 
     public void ClearConversation()
@@ -169,5 +183,118 @@ public class ConversationManager
             if (messages != null)
                 _messages.AddRange(messages);
         }
+    }
+
+    /// <summary>
+    /// 压缩对话上下文：对旧消息做摘要并替换为一条 system 消息
+    /// 保留 system 消息 + 最后 keepRounds 轮，其余压缩为摘要
+    /// </summary>
+    public async Task CompactContextAsync(int keepRounds = 3)
+    {
+        List<ChatMessage> snapshot;
+        lock (_msgLock) snapshot = new List<ChatMessage>(_messages);
+
+        var systemMsgs = snapshot.Where(m => m.Role == "system").ToList();
+        var nonSystem = snapshot.Where(m => m.Role != "system").ToList();
+
+        if (nonSystem.Count <= keepRounds * 2)
+            return;
+
+        var rounds = SplitIntoRounds(nonSystem);
+        if (rounds.Count <= keepRounds)
+            return;
+
+        var roundsToKeep = rounds.Skip(rounds.Count - keepRounds).ToList();
+        var roundsToCompress = rounds.Take(rounds.Count - keepRounds).ToList();
+
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("请对以下对话内容生成一段简洁的摘要，保留所有重要信息（关键决策、修改的文件、完成的步骤、待处理事项）：\n");
+            foreach (var round in roundsToCompress)
+            {
+                foreach (var msg in round)
+                {
+                    var label = msg.Role switch
+                    {
+                        "user" => "用户",
+                        "assistant" => "助手",
+                        "tool" => $"工具[{msg.Name}]",
+                        _ => msg.Role
+                    };
+                    var content = msg.Content ?? "";
+                    if (content.Length > 500)
+                        content = content[..500] + "...";
+                    sb.AppendLine($"[{label}]: {content}");
+                }
+                sb.AppendLine();
+            }
+
+            var summary = await SummarizeAsync(sb.ToString());
+            if (string.IsNullOrWhiteSpace(summary))
+                return;
+
+            lock (_msgLock)
+            {
+                var currentSystem = _messages.Where(m => m.Role == "system").ToList();
+                _messages.Clear();
+                _messages.AddRange(currentSystem);
+                _messages.Add(ChatMessage.CreateSystem($"## 历史对话摘要\n\n{summary}"));
+                foreach (var round in roundsToKeep)
+                    _messages.AddRange(round);
+            }
+        }
+        catch
+        {
+            // 压缩失败，保持原样
+        }
+    }
+
+    /// <summary>调用 DeepSeek API 总结文本</summary>
+    private async Task<string> SummarizeAsync(string text)
+    {
+        var messages = new List<ChatMessage>
+        {
+            ChatMessage.CreateSystem("你是一个对话摘要助手。请对输入的对话内容生成简洁摘要，提取所有关键信息。"),
+            ChatMessage.CreateUser(text)
+        };
+
+        var config = new Models.AppConfig
+        {
+            Model = "deepseek-v4-flash",
+            MaxTokens = 1024,
+            ThinkingEnabled = false
+        };
+
+        var fullContent = "";
+        await foreach (var chunk in _client.StreamChatAsync(new(), messages, config))
+        {
+            if (chunk.Choices?.Count > 0)
+            {
+                var delta = chunk.Choices[0].Delta;
+                if (delta?.Content != null)
+                    fullContent += delta.Content;
+            }
+        }
+
+        return fullContent.Trim();
+    }
+
+    private static List<List<ChatMessage>> SplitIntoRounds(List<ChatMessage> messages)
+    {
+        var rounds = new List<List<ChatMessage>>();
+        List<ChatMessage>? current = null;
+
+        foreach (var msg in messages)
+        {
+            if (msg.Role == "user")
+            {
+                current = new List<ChatMessage>();
+                rounds.Add(current);
+            }
+            current?.Add(msg);
+        }
+
+        return rounds;
     }
 }

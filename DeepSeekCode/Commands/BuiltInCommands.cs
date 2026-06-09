@@ -1,6 +1,8 @@
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using DeepSeekCode.Commands;
+using DeepSeekCode.MCP;
 using DeepSeekCode.Models;
 using DeepSeekCode.Session;
 using DeepSeekCode.Skills;
@@ -220,10 +222,155 @@ public class ConfigCommand : ISlashCommand
     public string Usage => "/config [key] [value]";
     public bool CanRunDuringStreaming => true;
 
+    /// <summary>可修改的配置键及其说明</summary>
+    private static readonly Dictionary<string, (string Label, string Desc)> ConfigKeys = new()
+    {
+        ["model"] = ("模型", "deepseek-v4-pro 或 deepseek-v4-flash"),
+        ["maxTokens"] = ("最大 Token", "单次生成最大 token 数（256-32768）"),
+        ["thinkingEnabled"] = ("Thinking 模式", "true 或 false"),
+        ["reasoningEffort"] = ("推理力度", "max / high / medium / low / min"),
+        ["temperature"] = ("温度", "0.0-2.0，Thinking 模式无效"),
+        ["topP"] = ("Top-P", "0.0-1.0，Thinking 模式无效"),
+        ["frequencyPenalty"] = ("频率惩罚", "-2.0 到 2.0"),
+        ["presencePenalty"] = ("存在惩罚", "-2.0 到 2.0"),
+        ["apiBaseUrl"] = ("API 地址", "DeepSeek API 基地址"),
+        ["enableJsonOutput"] = ("JSON 输出", "true 或 false"),
+        ["enablePrefixCompletion"] = ("前缀补全", "true 或 false"),
+    };
+
     public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
     {
-        // TODO: 读取/修改 ConfigService 中的配置项
-        return Task.FromResult(CommandResult.Ok("/config 功能开发中"));
+        if (context.Config == null)
+            return Task.FromResult(CommandResult.Ok("配置服务不可用"));
+
+        var config = context.Config.Config;
+        var parts = args.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+
+        // /config → 列出所有配置
+        if (parts.Length == 0 || string.IsNullOrWhiteSpace(args))
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("## 当前配置\n");
+            foreach (var kv in ConfigKeys)
+            {
+                var value = GetConfigValue(config, kv.Key);
+                sb.AppendLine($"- **{kv.Key}** ({kv.Value.Label}): `{value}`");
+            }
+            sb.AppendLine("\n使用 `/config <key> <value>` 修改配置");
+            return Task.FromResult(CommandResult.Ok(sb.ToString()));
+        }
+
+        var key = parts[0].Trim().ToLower();
+
+        // /config key → 查看单个配置
+        if (parts.Length == 1)
+        {
+            if (!ConfigKeys.TryGetValue(key, out var info))
+                return Task.FromResult(CommandResult.Ok($"未知配置项 '{key}'。输入 /config 查看可用配置项"));
+
+            var value = GetConfigValue(config, key);
+            return Task.FromResult(CommandResult.Ok($"**{key}** ({info.Label}): `{value}`\n{info.Desc}"));
+        }
+
+        // /config key value → 修改配置
+        if (!ConfigKeys.ContainsKey(key))
+            return Task.FromResult(CommandResult.Ok($"未知配置项 '{key}'。输入 /config 查看可用配置项"));
+
+        var newValue = parts[1].Trim();
+        var error = SetConfigValue(config, key, newValue);
+        if (error != null)
+            return Task.FromResult(CommandResult.Ok($"设置失败: {error}"));
+
+        context.Config.Save(config);
+
+        // 模型变更时发送事件
+        if (key == "model")
+            context.EventBus?.Publish(new Services.ConfigChangedEvent { Model = config.Model });
+
+        return Task.FromResult(CommandResult.Ok($"**{key}** 已更新为 `{GetConfigValue(config, key)}`"));
+    }
+
+    private static string GetConfigValue(AppConfig config, string key) => key switch
+    {
+        "model" => config.Model,
+        "maxTokens" => config.MaxTokens.ToString(),
+        "thinkingEnabled" => config.ThinkingEnabled.ToString().ToLower(),
+        "reasoningEffort" => config.ReasoningEffort,
+        "temperature" => config.Temperature.ToString("F1"),
+        "topP" => config.TopP.ToString("F1"),
+        "frequencyPenalty" => config.FrequencyPenalty.ToString("F1"),
+        "presencePenalty" => config.PresencePenalty.ToString("F1"),
+        "apiBaseUrl" => config.ApiBaseUrl,
+        "enableJsonOutput" => config.EnableJsonOutput.ToString().ToLower(),
+        "enablePrefixCompletion" => config.EnablePrefixCompletion.ToString().ToLower(),
+        _ => "(未知)"
+    };
+
+    private static string? SetConfigValue(AppConfig config, string key, string value)
+    {
+        switch (key)
+        {
+            case "model":
+                var validModels = new[] { "deepseek-v4-pro", "deepseek-v4-flash" };
+                if (!validModels.Contains(value))
+                    return $"无效模型 '{value}'，可用: {string.Join(", ", validModels)}";
+                config.Model = value;
+                break;
+            case "maxTokens":
+                if (!int.TryParse(value, out var tokens) || tokens < 256 || tokens > 32768)
+                    return "maxTokens 必须在 256-32768 之间";
+                config.MaxTokens = tokens;
+                break;
+            case "thinkingEnabled":
+                if (!bool.TryParse(value, out var thinking))
+                    return "请输入 true 或 false";
+                config.ThinkingEnabled = thinking;
+                break;
+            case "reasoningEffort":
+                var validEfforts = new[] { "max", "high", "medium", "low", "min" };
+                if (!validEfforts.Contains(value))
+                    return $"无效推理力度 '{value}'，可用: {string.Join(", ", validEfforts)}";
+                config.ReasoningEffort = value;
+                break;
+            case "temperature":
+                if (!double.TryParse(value, out var temp) || temp < 0 || temp > 2)
+                    return "temperature 必须在 0.0-2.0 之间";
+                config.Temperature = temp;
+                break;
+            case "topP":
+                if (!double.TryParse(value, out var topP) || topP < 0 || topP > 1)
+                    return "topP 必须在 0.0-1.0 之间";
+                config.TopP = topP;
+                break;
+            case "frequencyPenalty":
+                if (!double.TryParse(value, out var fp) || fp < -2 || fp > 2)
+                    return "frequencyPenalty 必须在 -2.0 到 2.0 之间";
+                config.FrequencyPenalty = fp;
+                break;
+            case "presencePenalty":
+                if (!double.TryParse(value, out var pp) || pp < -2 || pp > 2)
+                    return "presencePenalty 必须在 -2.0 到 2.0 之间";
+                config.PresencePenalty = pp;
+                break;
+            case "apiBaseUrl":
+                if (!Uri.TryCreate(value, UriKind.Absolute, out _))
+                    return $"无效的 URL: {value}";
+                config.ApiBaseUrl = value;
+                break;
+            case "enableJsonOutput":
+                if (!bool.TryParse(value, out var json))
+                    return "请输入 true 或 false";
+                config.EnableJsonOutput = json;
+                break;
+            case "enablePrefixCompletion":
+                if (!bool.TryParse(value, out var prefix))
+                    return "请输入 true 或 false";
+                config.EnablePrefixCompletion = prefix;
+                break;
+            default:
+                return $"不支持的配置项 '{key}'";
+        }
+        return null;
     }
 }
 
@@ -232,13 +379,28 @@ public class CompactCommand : ISlashCommand
 {
     public string Name => "compact";
     public string Description => "压缩上下文窗口，释放 token";
-    public string Usage => "/compact";
+    public string Usage => "/compact [保留轮数]";
     public bool CanRunDuringStreaming => false;
 
-    public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
+    public async Task<CommandResult> ExecuteAsync(string args, CommandContext context)
     {
-        // TODO: 对历史对话做压缩摘要
-        return Task.FromResult(CommandResult.Ok("/compact 功能开发中"));
+        if (context.Conversation == null)
+            return CommandResult.Ok("对话管理器不可用");
+
+        var keepRounds = 3;
+        if (!string.IsNullOrWhiteSpace(args) && int.TryParse(args.Trim(), out var n) && n > 0 && n <= 20)
+            keepRounds = n;
+
+        var beforeCount = context.Conversation.Messages.Count;
+        await context.Conversation.CompactContextAsync(keepRounds);
+        var afterCount = context.Conversation.Messages.Count;
+
+        if (afterCount < beforeCount)
+            return CommandResult.Ok(
+                $"上下文已压缩: {beforeCount} → {afterCount} 条消息（保留最后 {keepRounds} 轮 + 历史摘要）",
+                refresh: true);
+
+        return CommandResult.Ok("上下文无需压缩（消息量不足以触发压缩）");
     }
 }
 
@@ -352,5 +514,121 @@ public class SkillsCommand : ISlashCommand
         sb2.AppendLine("\n使用 `/skills <名称>` 查看技能详情");
 
         return Task.FromResult(CommandResult.Ok(sb2.ToString()));
+    }
+}
+
+/// <summary>/mcp — 管理 MCP 服务器</summary>
+public class McpCommand : ISlashCommand
+{
+    public string Name => "mcp";
+    public string Description => "管理 MCP 服务器（列出/重载）";
+    public string Usage => "/mcp [list|reload]";
+    public bool CanRunDuringStreaming => true;
+
+    public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
+    {
+        var mcpService = context.McpService;
+        if (mcpService == null)
+            return Task.FromResult(CommandResult.Ok("MCP 服务不可用"));
+
+        var subCmd = args?.Trim().ToLowerInvariant() ?? "list";
+
+        if (subCmd == "reload")
+        {
+            return Task.FromResult(CommandResult.Ok(
+                "MCP 热重载暂不支持，请重启应用以重新加载 MCP 服务器配置。" +
+                "\n\n配置文件: `~\\.deepseek-code\\mcp-servers.json`"));
+        }
+
+        // 默认: 列出当前状态
+        var config = McpService.LoadConfig();
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("## MCP 服务器\n");
+
+        if (config.Servers.Count == 0)
+        {
+            sb.AppendLine("暂无配置的 MCP 服务器。");
+            sb.AppendLine("\n在 `~\\.deepseek-code\\mcp-servers.json` 中添加服务器配置后重启应用。");
+            sb.AppendLine("\n示例配置:");
+            sb.AppendLine("```json");
+            sb.AppendLine("{");
+            sb.AppendLine("  \"servers\": [{");
+            sb.AppendLine("    \"name\": \"my-server\",");
+            sb.AppendLine("    \"command\": \"npx\",");
+            sb.AppendLine("    \"args\": [\"-y\", \"@scope/server-name\"],");
+            sb.AppendLine("    \"enabled\": true");
+            sb.AppendLine("  }]");
+            sb.AppendLine("}");
+            sb.AppendLine("```");
+        }
+        else
+        {
+            foreach (var server in config.Servers)
+            {
+                var status = server.Enabled ? "✅ 启用" : "⏸ 禁用";
+                sb.AppendLine($"- **{server.Name}** [{status}]");
+                sb.AppendLine($"  命令: `{server.Command} {string.Join(" ", server.Args)}`");
+            }
+
+            sb.AppendLine();
+            var registeredTools = mcpService.RegisteredTools;
+            if (registeredTools.Count > 0)
+            {
+                sb.AppendLine($"### 已注册 MCP 工具 ({registeredTools.Count})\n");
+                foreach (var tool in registeredTools)
+                    sb.AppendLine($"- `{tool.Name}` — {tool.Description}");
+            }
+            else
+            {
+                sb.AppendLine("(MCP 服务正在后台启动，工具即将加载...)");
+            }
+        }
+
+        return Task.FromResult(CommandResult.Ok(sb.ToString()));
+    }
+}
+
+/// <summary>/plan — 切换 Plan 模式</summary>
+public class PlanCommand : ISlashCommand
+{
+    public string Name => "plan";
+    public string Description => "切换 Plan 模式（先规划后执行）。输入 /plan off 退出。";
+    public string Usage => "/plan [off]";
+    public bool CanRunDuringStreaming => true;
+
+    public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
+    {
+        var planMode = context.PlanMode;
+        if (planMode == null)
+            return Task.FromResult(CommandResult.Ok("Plan 模式服务不可用"));
+
+        var subCmd = args?.Trim().ToLowerInvariant() ?? "";
+
+        if (subCmd == "off" || subCmd == "exit" || subCmd == "stop")
+        {
+            if (!planMode.IsActive)
+                return Task.FromResult(CommandResult.Ok("当前未在 Plan 模式。"));
+
+            var planPath = planMode.Exit();
+            var msg = "已退出 Plan 模式。";
+            if (!string.IsNullOrEmpty(planPath))
+                msg += $"\n\n计划文件路径: `{planPath}`";
+            return Task.FromResult(CommandResult.Ok(msg));
+        }
+
+        if (planMode.IsActive)
+            return Task.FromResult(CommandResult.Ok(
+                "已在 Plan 模式中。\n\n" +
+                $"计划文件: `{planMode.PlanFilePath}`\n\n" +
+                "在此模式下 AI 只能读取文件，不能修改代码。\n" +
+                "输入 `/plan off` 退出 Plan 模式。"));
+
+        var path = planMode.Enter();
+        return Task.FromResult(CommandResult.Ok(
+            "已进入 Plan 模式 📋\n\n" +
+            $"计划文件: `{path}`\n\n" +
+            "AI 现在只能读取文件，不能修改代码（计划文件除外）。\n" +
+            "AI 会先探索代码、设计方案，完成后请求你的审批。\n" +
+            "输入 `/plan off` 退出 Plan 模式。"));
     }
 }

@@ -154,11 +154,6 @@ public class SkillEngine
         return sb.ToString().TrimEnd();
     }
 
-    private static string Truncate(string text, int maxLen)
-    {
-        return text.Length <= maxLen ? text : text[..(maxLen - 3)] + "...";
-    }
-
     /// <summary>
     /// 列出所有已加载技能（项目级优先）
     /// </summary>

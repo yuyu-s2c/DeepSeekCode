@@ -9,6 +9,12 @@ public class ToolRegistry
 
     public void Register(ITool tool) => _tools.Add(tool);
 
+    public void Unregister(string name)
+    {
+        var tool = _tools.Find(t => t.Name == name);
+        if (tool != null) _tools.Remove(tool);
+    }
+
     public ITool? GetTool(string name) => _tools.Find(t => t.Name == name);
 
     public List<ToolDefinition> GetDefinitions() => _tools.ConvertAll(t => t.ToDefinition());

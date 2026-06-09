@@ -32,6 +32,7 @@ public class ParameterSchema
     public Dictionary<string, PropertySchema> Properties { get; set; } = new();
 
     [JsonPropertyName("required")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Required { get; set; }
 }
 

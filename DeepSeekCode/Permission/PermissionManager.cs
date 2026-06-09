@@ -171,6 +171,7 @@ public class PermissionManager
         });
     }
 
+    /// <summary>添加自定义规则（插入到列表头部，优先级高于默认规则）</summary>
     public void AddRule(PermissionRule rule)
     {
         _rules.Insert(0, rule);

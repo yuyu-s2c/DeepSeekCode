@@ -7,6 +7,7 @@ namespace DeepSeekCode.Tools;
 
 /// <summary>
 /// Git 集成工具集：git_diff / git_log / git_commit
+/// 使用 ArgumentList 数组传参和 -- 分隔符，杜绝命令/文件名注入
 /// </summary>
 public abstract class GitToolBase : ITool
 {
@@ -27,14 +28,13 @@ public abstract class GitToolBase : ITool
     public abstract Task<string> ExecuteAsync(Dictionary<string, object?> arguments);
 
     /// <summary>在工作区目录执行 git 命令</summary>
-    protected static async Task<string> RunGitAsync(string args, string? workdir = null)
+    protected static async Task<string> RunGitAsync(string[] args, string? workdir = null)
     {
         var wd = workdir ?? Environment.CurrentDirectory;
 
         var info = new ProcessStartInfo
         {
             FileName = "git",
-            Arguments = args,
             WorkingDirectory = wd,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -43,6 +43,9 @@ public abstract class GitToolBase : ITool
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        foreach (var arg in args)
+            info.ArgumentList.Add(arg);
 
         try
         {
@@ -111,11 +114,17 @@ public class GitDiffTool : GitToolBase
         var staged = arguments.TryGetValue("staged", out var s) &&
             (s is true || string.Equals(s?.ToString(), "true", StringComparison.OrdinalIgnoreCase));
 
-        var args = staged ? "diff --staged" : "diff HEAD";
-        if (!string.IsNullOrWhiteSpace(path))
-            args += $" -- {path}";
+        var argList = new List<string> { "diff" };
+        if (staged) argList.Add("--staged");
+        else argList.Add("HEAD");
 
-        return await RunGitAsync(args);
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            argList.Add("--");
+            argList.Add(path);
+        }
+
+        return await RunGitAsync(argList.ToArray());
     }
 }
 
@@ -157,11 +166,17 @@ public class GitLogTool : GitToolBase
         var oneline = !(arguments.TryGetValue("oneline", out var o) &&
             string.Equals(o?.ToString(), "false", StringComparison.OrdinalIgnoreCase));
 
-        var args = oneline ? $"log --oneline -{count}" : $"log -{count}";
-        if (!string.IsNullOrWhiteSpace(path))
-            args += $" -- {path}";
+        var argList = new List<string> { "log" };
+        if (oneline) argList.Add("--oneline");
+        argList.Add($"-{count}");
 
-        return await RunGitAsync(args);
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            argList.Add("--");
+            argList.Add(path);
+        }
+
+        return await RunGitAsync(argList.ToArray());
     }
 }
 
@@ -169,7 +184,7 @@ public class GitLogTool : GitToolBase
 public class GitCommitTool : GitToolBase
 {
     public override string Name => "git_commit";
-    public override string Description => "Stages and commits changes to Git.\n- Runs `git add` on the specified files (or `git add -A` if no files specified), then `git commit -m`.\n- message is required and should follow conventional commits format (e.g. \"feat: add user login\", \"fix: resolve null reference\").\n- files is optional; provide a comma-separated list of paths, or omit to stage all tracked changes.\n- IMPORTANT: Only use this tool when the user explicitly asks you to commit. Never commit without being asked.\n- File paths are escaped to prevent command injection.\n- This tool may be blocked by the permission system — it requires user approval.";
+    public override string Description => "Stages and commits changes to Git.\n- Runs `git add` on the specified files (or `git add -A` if no files specified), then `git commit -m`.\n- message is required and should follow conventional commits format (e.g. \"feat: add user login\", \"fix: resolve null reference\").\n- files is optional; provide a comma-separated list of paths, or omit to stage all tracked changes.\n- IMPORTANT: Only use this tool when the user explicitly asks you to commit. Never commit without being asked.\n- All arguments are passed via ArgumentList, no shell escaping needed — command injection is structurally impossible.\n- This tool may be blocked by the permission system — it requires user approval.";
 
     public override ParameterSchema Parameters => new()
     {
@@ -209,9 +224,8 @@ public class GitCommitTool : GitToolBase
         {
             foreach (var file in files)
             {
-                // 转义文件名中的双引号，防止命令注入
-                var safeFile = file.Replace("\"", "\\\"");
-                var addResult = await RunGitAsync($"add \"{safeFile}\"");
+                // -- 终止选项解析，文件名不做任何转义，直接传入 ArgumentList
+                var addResult = await RunGitAsync(["add", "--", file]);
                 if (addResult.StartsWith("Git 错误") || addResult.StartsWith("错误"))
                     return addResult;
             }
@@ -219,14 +233,13 @@ public class GitCommitTool : GitToolBase
         }
         else
         {
-            // git add -A 暂存所有变更
-            var addResult = await RunGitAsync("add -A");
+            var addResult = await RunGitAsync(["add", "-A"]);
             if (addResult.StartsWith("Git 错误") || addResult.StartsWith("错误"))
                 return addResult;
         }
 
-        // git commit
-        var commitResult = await RunGitAsync($"commit -m \"{message.Replace("\"", "\\\"")}\"");
+        // git commit — 消息作为独立参数传入，无需转义
+        var commitResult = await RunGitAsync(["commit", "-m", message]);
 
         sb.Append(commitResult);
         return sb.ToString();

@@ -11,6 +11,7 @@ public partial class SettingsWindow : Window
     private readonly ConfigService _configService;
     private readonly EventBus? _eventBus;
     private bool _suppressEvents;
+    private bool _credentialsChanged;
 
     public SettingsWindow(ConfigService configService, EventBus? eventBus = null)
     {
@@ -26,6 +27,11 @@ public partial class SettingsWindow : Window
         _suppressEvents = true;
 
         var config = _configService.Config;
+
+        // 账户
+        if (!string.IsNullOrWhiteSpace(config.ApiKey))
+            ApiKeyBox.Password = config.ApiKey;
+        BaseUrlBox.Text = config.ApiBaseUrl;
 
         // 模型
         foreach (ComboBoxItem item in ModelCombo.Items)
@@ -61,6 +67,7 @@ public partial class SettingsWindow : Window
         PrefixContentBox.Text = config.PrefixContent;
 
         _suppressEvents = false;
+        _credentialsChanged = false;
     }
 
     private void OnSettingChanged(object sender, EventArgs e)
@@ -92,9 +99,36 @@ public partial class SettingsWindow : Window
         PresLabel.Text = e.NewValue.ToString("F1");
     }
 
+    private void ToggleApiKeyVisibility_Click(object sender, RoutedEventArgs e)
+    {
+        if (ApiKeyBox.PasswordChar == '•')
+        {
+            ApiKeyBox.PasswordChar = '\0';
+            ToggleApiKeyBtn.Content = "🙈";
+        }
+        else
+        {
+            ApiKeyBox.PasswordChar = '•';
+            ToggleApiKeyBtn.Content = "👁";
+        }
+    }
+
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         var config = _configService.Config;
+
+        // 检测凭据变更
+        var newApiKey = ApiKeyBox.Password.Trim();
+        var newBaseUrl = BaseUrlBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(newBaseUrl))
+            newBaseUrl = "https://api.deepseek.com";
+
+        if (newApiKey != config.ApiKey || newBaseUrl != config.ApiBaseUrl)
+            _credentialsChanged = true;
+
+        // 账户
+        config.ApiKey = newApiKey;
+        config.ApiBaseUrl = newBaseUrl;
 
         // 模型
         if (ModelCombo.SelectedItem is ComboBoxItem modelItem)
@@ -121,7 +155,11 @@ public partial class SettingsWindow : Window
         config.PrefixContent = PrefixContentBox.Text.Trim();
 
         _configService.Save(config);
-        _eventBus?.Publish(new ConfigChangedEvent { Model = config.Model });
+        _eventBus?.Publish(new ConfigChangedEvent
+        {
+            Model = config.Model,
+            CredentialsChanged = _credentialsChanged
+        });
 
         DialogResult = true;
         Close();

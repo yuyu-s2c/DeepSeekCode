@@ -287,25 +287,29 @@ system[1] 后半: Environment + Git 状态 (动态注入)
 
 | 特性 | Claude Code 怎么做 | 你的应用怎么做 |
 |------|-------------------|-------------|
-| 工具 description 详细度 | 每个工具微型文档 (数百字) | 简短一句话 (`FileTools.cs` 中的 `Description` 属性) |
-| Skill 注入量 | 全量 name+description 贴进 system | 只贴 name+一句话索引 |
-| Git 状态注入 | git status + recent commits 实时注入 system | 没有 |
-| Memory 系统 | 持久化文件记忆 + frontmatter 索引 | 没有 |
-| Context summary | 自动摘要续接长对话 | 900K 滑动窗口 (更暴力) |
-| Plan mode | EnterPlanMode/ExitPlanMode 工具强制先规划 | 没有 |
-| 工具 description 结构 | When to Use / When NOT / Examples / Tips | 只有 Parameters + Description |
-| 环境信息注入 | 平台/Shell/OS/模型版本 全注入 system | 只有工作区路径 |
+| ~~工具 description 详细度~~ | ~~每个工具微型文档 (数百字)~~ | ✅ **已实现** — 每个工具 Description 4-8 行微型文档，覆盖 When to Use / Constraints / Tips |
+| ~~Skill 注入量~~ | ~~全量 name+description 贴进 system~~ | ✅ **已实现** — `SkillEngine.GenerateSkillsIndex()` 将 name + description 全部注入 system 消息 |
+| ~~Git 状态注入~~ | ~~git status + recent commits 实时注入 system~~ | ✅ **已实现** — `MainWindow.GetGitStatusContext()` 注入 branch、status、recent commits |
+| Memory 系统 | 持久化文件记忆 + frontmatter 索引 | ✅ **已实现** — `~\.deepseek-code\memory.md`，单文件轻量方案，启动时自动注入 |
+| ~~Context summary~~ | ~~自动摘要续接长对话~~ | ✅ **已实现** — SmartCompress 优先摘要旧轮次，SlidingWindow 兜底 |
+| Plan mode | EnterPlanMode/ExitPlanMode 工具强制先规划 | ✅ **已实现** — 5 阶段工作流，`/plan` 命令 + AI 工具，状态栏常驻指示 |
+| ~~环境信息注入~~ | ~~平台/Shell/OS/模型版本 全注入 system~~ | ✅ **已实现** — system prompt 含 platform、shell、workspace、git 状态等完整环境信息 |
+| Hooks 系统 | PreToolUse / PostToolUse / Notification 钩子 | ❌ 未实现（有 ToolPipeline 内部过滤器但用户不可配置） |
+| 自定义 Slash 命令 | 用户可自定义命令模板 | ✅ **已实现** — `~\.deepseek-code\custom-commands.json`，支持 `{args}` 模板替换 |
+| MCP 协议 | 动态接入外部 MCP 服务器工具 | ✅ **已实现** — `MCP/McpClient.cs`，JSON-RPC 2.0 over stdio，`mcp-servers.json` 配置 |
+| 侧边栏 / 常驻面板 | TODO / Subagent 进度常驻显示 | ✅ **已实现** — 左侧可折叠/拖拽侧边栏，任务列表 + 子代理进度动画 |
+| 账户设置页内配置 | API Key 在设置 Tab 中管理 | ✅ **已实现** — SettingsWindow 新增"账户"标签页 |
 
 ---
 
 ## 7. 建议的下一步改进
 
-按照优先级排列：
+按优先级排列：
 
-1. **扩充工具 description** — 参考 Claude Code 的 "When to Use / When NOT / Examples / Tips" 模式，重写 `ITool.Description`，这是性价比最高的改进——工具定义每次请求都会发送，相当于免费的提示词增强。
+1. **Hooks 系统** — PreToolUse / PostToolUse 钩子，用户可配置自定义脚本在工具执行前后介入。
 
-2. **Skills 全量注入** — 把 Skill 的 description 全部贴进 system，而不是只贴索引。你的 Skill 不多 (20 个以内)，全量注入不会超出上下文。
+2. **系统托盘** — 最小化到托盘常驻后台。
 
-3. **Git 状态注入** — 在 system 消息末尾附加 `git status` 和最近提交记录，模型就知道当前仓库的状态。
+3. **主题切换** — 目前写死了白底天蓝配色，后续可支持暗色/自定义主题。
 
-4. **更详细的 Harness 行为规则** — Claude Code 有很多细致的规则：`denied call means user declined — adjust, don't retry`、`surface contradictions instead of proceeding`、`state it plainly without hedging` 等。
+4. **自动 lint / typecheck** — AI 修改代码后自动运行 linter 和类型检查器，即时反馈。

@@ -1,8 +1,10 @@
 ﻿using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 
 using DeepSeekCode.Commands;
 using DeepSeekCode.Commands.BuiltIn;
+using DeepSeekCode.MCP;
 using DeepSeekCode.Services;
 using DeepSeekCode.Session;
 using DeepSeekCode.Skills;
@@ -20,16 +22,6 @@ public partial class App : Application
         // ── 1. 配置服务 ──
         var configService = new ConfigService();
 
-        if (string.IsNullOrWhiteSpace(configService.Config.ApiKey))
-        {
-            var apiKeyWindow = new ApiKeyWindow(configService);
-            if (apiKeyWindow.ShowDialog() != true)
-            {
-                Shutdown();
-                return;
-            }
-        }
-
         // ── 2. 初始化服务容器 ──
         var locator = new ServiceLocator();
 
@@ -38,6 +30,12 @@ public partial class App : Application
         locator.RegisterInstance(eventBus);
 
         locator.RegisterInstance(configService);
+
+        // 日志系统
+        var logger = new Logger();
+        locator.RegisterInstance(logger);
+        CrashHandler.Initialize(logger);
+        logger.Info($"DeepSeek Code 启动");
 
         // 工作区
         var workspaceService = new WorkspaceService(configService, eventBus);
@@ -72,11 +70,26 @@ public partial class App : Application
         // 子代理系统
         var subagentRunner = new SubagentRunner(
             deepSeekClient, toolRegistry, permissionManager,
-            workspaceService, configService, eventBus);
+            workspaceService, configService, eventBus, logger);
         toolRegistry.Register(new TaskTool(subagentRunner));
         locator.RegisterInstance(subagentRunner);
 
         locator.RegisterInstance(toolRegistry);
+
+        // ── 4.5 MCP 服务（提前创建供 CommandContext 引用） ──
+        var mcpService = new McpService(toolRegistry, logger);
+        locator.RegisterInstance(mcpService);
+
+        // ── 4.6 Plan 模式服务 ──
+        var planModeService = new PlanModeService(workspaceService);
+        locator.RegisterInstance(planModeService);
+        toolRegistry.Register(new EnterPlanModeTool(planModeService));
+        toolRegistry.Register(new ExitPlanModeTool(planModeService));
+
+        // ── 4.7 Memory 系统 ──
+        MemoryService.EnsureExists();
+        var memoryService = new MemoryService();
+        locator.RegisterInstance(memoryService);
 
         // ── 5. 对话管理 ──
         var conversationManager = new ConversationManager(deepSeekClient);
@@ -97,10 +110,39 @@ public partial class App : Application
         var contextOptions = new ContextStrategyOptions
         {
             MaxTokens = 900_000,  // 1M 窗口留 100K 给输出 + 工具定义
-            TokenEstimator = async text => await deepSeekClient.EstimateTokenCount(text)
+            TokenEstimator = async text => await deepSeekClient.EstimateTokenCount(text),
+            ProjectRoot = workspaceService.WorkspacePath,
+            Summarizer = async text =>
+            {
+                var summaryMessages = new List<Models.ChatMessage>
+                {
+                    Models.ChatMessage.CreateSystem("You are a conversation summarizer. Produce a concise summary that captures all critical information: key decisions, files modified, steps completed, and pending items. Output only the summary, no preamble."),
+                    Models.ChatMessage.CreateUser(text)
+                };
+                var summaryConfig = new Models.AppConfig
+                {
+                    Model = "deepseek-v4-flash",
+                    MaxTokens = 1024,
+                    ThinkingEnabled = false
+                };
+                var result = "";
+                await foreach (var chunk in deepSeekClient.StreamChatAsync(
+                    new(), summaryMessages, summaryConfig))
+                {
+                    if (chunk.Choices?.Count > 0)
+                    {
+                        var delta = chunk.Choices[0].Delta;
+                        if (delta?.Content != null)
+                            result += delta.Content;
+                    }
+                }
+                return result.Trim();
+            }
         };
         var contextOrchestrator = new ContextStrategyOrchestrator(contextOptions)
-            .AddStrategy(new SlidingWindowStrategy());
+            .AddStrategy(new SmartCompressStrategy())
+            .AddStrategy(new SlidingWindowStrategy())
+            .AddStrategy(new FileInjectionStrategy());
         locator.RegisterInstance(contextOrchestrator);
 
         // 注入到 ConversationManager
@@ -121,7 +163,10 @@ public partial class App : Application
             SessionStore = sessionStore,
             CommandRegistry = commandRegistry,
             WorkspaceService = workspaceService,
-            SkillEngine = skillEngine
+            SkillEngine = skillEngine,
+            DeepSeekClient = deepSeekClient,
+            McpService = mcpService,
+            PlanMode = planModeService
         };
 
         commandRegistry.Register(new HelpCommand());
@@ -134,6 +179,8 @@ public partial class App : Application
         commandRegistry.Register(new SettingsCommand());
         commandRegistry.Register(new WorkspaceCommand());
         commandRegistry.Register(new SkillsCommand());
+        commandRegistry.Register(new McpCommand());
+        commandRegistry.Register(new PlanCommand());
         locator.RegisterInstance(commandRegistry);
         locator.RegisterInstance(commandContext);
 
@@ -146,6 +193,27 @@ public partial class App : Application
             ".deepseek-code", "skills");
         skillEngine.LoadFromDirectory(userSkillsDir, projectLevel: false);
 
+        // ── 6.5 自定义命令 ──
+        EnsureDefaultCustomCommands();
+        var customCommandService = new CustomCommandService(commandRegistry);
+        customCommandService.LoadAndRegister();
+        locator.RegisterInstance(customCommandService);
+        logger.Info("已加载自定义命令");
+
+        // ── 6.6 MCP 服务（后台异步启动） ──
+        Task.Run(async () =>
+        {
+            try
+            {
+                EnsureDefaultMcpConfig();
+                await mcpService.StartAllAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"MCP 服务启动异常: {ex.Message}");
+            }
+        });
+
         // ── 7. 状态栏 ViewModel ──
         var statusVm = new StatusViewModel { Model = configService.Config.Model };
         locator.RegisterInstance(statusVm);
@@ -153,5 +221,61 @@ public partial class App : Application
         // ── 8. 启动主窗口 ──
         var mainWindow = new MainWindow(locator);
         mainWindow.Show();
+    }
+
+    // ═══════════════════════════════════════════
+    //  默认配置初始化
+    // ═══════════════════════════════════════════
+
+    private static void EnsureDefaultMcpConfig()
+    {
+        var configPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".deepseek-code", "mcp-servers.json");
+
+        if (File.Exists(configPath)) return;
+
+        var defaultConfig = new Models.McpConfig
+        {
+            Servers = new()
+        };
+
+        McpService.SaveConfig(defaultConfig);
+    }
+
+    private static void EnsureDefaultCustomCommands()
+    {
+        var configPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".deepseek-code", "custom-commands.json");
+
+        if (File.Exists(configPath)) return;
+
+        var defaultConfig = new Models.CustomCommandConfig
+        {
+            Commands = new()
+            {
+                new Models.CustomCommand
+                {
+                    Name = "explain",
+                    Description = "解释选中的代码或概念",
+                    Prompt = "请详细解释以下内容，用通俗易懂的语言说明：\n\n{args}"
+                },
+                new Models.CustomCommand
+                {
+                    Name = "review",
+                    Description = "代码审查：检查 Bug、性能问题和改进建议",
+                    Prompt = "请审查以下代码，识别潜在的 Bug、性能问题、安全漏洞，并给出改进建议：\n\n{args}"
+                },
+                new Models.CustomCommand
+                {
+                    Name = "refactor",
+                    Description = "重构指定代码，保持功能不变",
+                    Prompt = "请重构以下代码，保持功能完全一致，但提高可读性、可维护性和性能。重构后给出逐条说明：\n\n{args}"
+                }
+            }
+        };
+
+        CustomCommandService.SaveConfig(defaultConfig);
     }
 }

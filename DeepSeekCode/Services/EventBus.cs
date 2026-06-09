@@ -60,12 +60,16 @@ public class EventBus
     /// </summary>
     public void PublishAsync<T>(T @event) where T : class
     {
-        if (_handlers.TryGetValue(typeof(T), out var handlers))
+        List<Delegate>? handlers;
+        lock (_lock)
         {
-            var snapshot = handlers.ToArray();
-            foreach (var handler in snapshot)
-                Task.Run(() => ((Action<T>)handler)(@event));
+            if (!_handlers.TryGetValue(typeof(T), out handlers))
+                return;
+            // 拷贝快照，避免回调中修改集合导致死锁
+            handlers = new List<Delegate>(handlers);
         }
+        foreach (var handler in handlers)
+            Task.Run(() => ((Action<T>)handler)(@event));
     }
 }
 
@@ -136,6 +140,8 @@ public class SessionChangedEvent
 public class ConfigChangedEvent
 {
     public string? Model { get; init; }
+    /// <summary>API Key 或 Base URL 是否变更（需重建客户端凭据）</summary>
+    public bool CredentialsChanged { get; init; }
 }
 
 /// <summary>打开设置窗口请求</summary>

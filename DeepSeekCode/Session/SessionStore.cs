@@ -56,9 +56,10 @@ public class FileSessionStore : ISessionStore
                 if (wrapper?.Metadata != null)
                     result.Add(wrapper.Metadata);
             }
-            catch
+            catch (Exception ex)
             {
-                // 跳过损坏的会话文件
+                // 跳过损坏的会话文件，记录以便排查
+                System.Diagnostics.Debug.WriteLine($"[FileSessionStore] 跳过损坏的会话文件 {file.Name}: {ex.Message}");
             }
         }
 

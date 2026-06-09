@@ -10,11 +10,12 @@ namespace DeepSeekCode.Tools;
 
 public class WebFetchTool : ITool
 {
-    private static readonly HttpClient _http = new(new HttpClientHandler
+    private static readonly HttpClient _http = new(new SocketsHttpHandler
     {
         AutomaticDecompression = DecompressionMethods.All,
         AllowAutoRedirect = true,
-        MaxAutomaticRedirections = 5
+        MaxAutomaticRedirections = 5,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5)  // DNS 变更在 5 分钟内生效
     })
     {
         Timeout = TimeSpan.FromSeconds(30)

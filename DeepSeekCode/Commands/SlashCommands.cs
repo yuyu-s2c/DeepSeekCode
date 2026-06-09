@@ -33,6 +33,11 @@ public class CommandContext
     public SlashCommandRegistry? CommandRegistry { get; init; }
     public Services.WorkspaceService? WorkspaceService { get; init; }
     public Skills.SkillEngine? SkillEngine { get; init; }
+    public Services.DeepSeekClient? DeepSeekClient { get; init; }
+    /// <summary>MCP 服务管理器</summary>
+    public MCP.McpService? McpService { get; init; }
+    /// <summary>Plan 模式服务</summary>
+    public Services.PlanModeService? PlanMode { get; init; }
     /// <summary>当前正在编辑的会话 ID，保存时覆盖而非新建</summary>
     public string? CurrentSessionId { get; set; }
 }
@@ -50,6 +55,9 @@ public class CommandResult
 
     /// <summary>是否需要刷新 UI</summary>
     public bool RefreshUI { get; init; }
+
+    /// <summary>如果设置，替代原始用户输入发送给 AI（用于自定义命令模板替换）</summary>
+    public string? UserPrompt { get; init; }
 
     public static CommandResult Ok(string? message = null, bool refresh = false)
         => new() { Handled = true, DisplayMessage = message, RefreshUI = refresh };

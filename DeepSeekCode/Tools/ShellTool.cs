@@ -13,7 +13,7 @@ public class ShellTool : ITool
         "taskkill", "reg", "takeown", "icacls"
     };
 
-    private readonly HashSet<string> ReadOnlyCommands = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ReadOnlyCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "ls", "dir", "cat", "type", "echo", "git", "dotnet", "npm",
         "node", "python", "pwsh", "where", "which", "find", "findstr",
@@ -69,7 +69,6 @@ public class ShellTool : ITool
         var processInfo = new ProcessStartInfo
         {
             FileName = "pwsh.exe",
-            Arguments = $"-NoProfile -Command \"{command}\"",
             WorkingDirectory = workdir ?? Environment.CurrentDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -78,6 +77,15 @@ public class ShellTool : ITool
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        // 强制 PowerShell 输出编码为 UTF-8，解决中文系统 GB2312 乱码问题
+        // $OutputEncoding 控制重定向输出的编码，[Console]::OutputEncoding 控制控制台输出编码
+        var utf8Command = "$OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + command;
+
+        // 使用 ArgumentList 数组传参，从根本上杜绝命令行注入
+        processInfo.ArgumentList.Add("-NoProfile");
+        processInfo.ArgumentList.Add("-Command");
+        processInfo.ArgumentList.Add(utf8Command);
 
         try
         {

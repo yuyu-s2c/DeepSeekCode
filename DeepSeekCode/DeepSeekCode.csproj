@@ -18,4 +18,10 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Resources\js\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

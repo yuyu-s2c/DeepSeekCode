@@ -25,6 +25,11 @@ public static class DiffRenderer
         var oldLines = oldText.Replace("\r\n", "\n").Split('\n');
         var newLines = newText.Replace("\r\n", "\n").Split('\n');
 
+        // 超大文件不做 LCS，直接逐行比较（避免 O(n*m) 矩阵内存爆炸）
+        const int maxLcsLines = 5000;
+        if (oldLines.Length > maxLcsLines || newLines.Length > maxLcsLines)
+            return ComputeSimpleDiff(oldLines, newLines);
+
         var lcs = ComputeLcs(oldLines, newLines);
         var result = new List<DiffLine>();
         int oi = 0, ni = 0, li = 0;
@@ -81,6 +86,33 @@ public static class DiffRenderer
                 y--;
         }
         result.Reverse();
+        return result;
+    }
+
+    /// <summary>
+    /// 对超大文件做简化的逐行比较（无 LCS），避免 O(n*m) 矩阵内存爆炸
+    /// </summary>
+    private static List<DiffLine> ComputeSimpleDiff(string[] oldLines, string[] newLines)
+    {
+        var result = new List<DiffLine>();
+        var maxLen = Math.Max(oldLines.Length, newLines.Length);
+        for (var i = 0; i < maxLen; i++)
+        {
+            if (i < oldLines.Length && i < newLines.Length)
+            {
+                if (oldLines[i] == newLines[i])
+                    result.Add(new DiffLine(DiffLineType.Unchanged, oldLines[i]));
+                else
+                {
+                    result.Add(new DiffLine(DiffLineType.Removed, oldLines[i]));
+                    result.Add(new DiffLine(DiffLineType.Added, newLines[i]));
+                }
+            }
+            else if (i < oldLines.Length)
+                result.Add(new DiffLine(DiffLineType.Removed, oldLines[i]));
+            else
+                result.Add(new DiffLine(DiffLineType.Added, newLines[i]));
+        }
         return result;
     }
 

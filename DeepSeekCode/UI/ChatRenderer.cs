@@ -21,6 +21,17 @@ public class ChatRenderer
     public async Task InitializeAsync()
     {
         await _webView.EnsureCoreWebView2Async();
+
+        // 将本地 Resources/js 目录映射到虚拟主机 app.local，实现离线可用
+        var jsDir = System.IO.Path.Combine(
+            System.AppDomain.CurrentDomain.BaseDirectory, "Resources", "js");
+        if (System.IO.Directory.Exists(jsDir))
+        {
+            _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "app.local", jsDir,
+                Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+        }
+
         _webView.CoreWebView2.NavigateToString(HtmlTemplate);
         _initialized = true;
     }
@@ -115,6 +126,7 @@ public class ChatRenderer
             .Replace("\\", "\\\\")
             .Replace("`", "\\`")
             .Replace("$", "\\$")
+            .Replace("</", "<\\/")  // 防止 </script> 提前闭合
             .Replace("\r\n", "\n")
             .Replace("\r", "\n");
     }
@@ -124,12 +136,12 @@ public class ChatRenderer
 <head>
 <meta charset=""UTF-8"">
 <meta name=""viewport"" content=""width=device-width,initial-scale=1"">
-<script src=""https://cdn.jsdelivr.net/npm/marked@12/marked.min.js""></script>
-<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github.min.css"">
-<script src=""https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js""></script>
-<link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"">
-<script src=""https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js""></script>
-<script src=""https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js""></script>
+<script src=""https://app.local/marked.min.js""></script>
+<link rel=""stylesheet"" href=""https://app.local/github.min.css"">
+<script src=""https://app.local/highlight.min.js""></script>
+<link rel=""stylesheet"" href=""https://app.local/katex.min.css"">
+<script src=""https://app.local/katex.min.js""></script>
+<script src=""https://app.local/katex-auto-render.min.js""></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;color:#1a2a38;background:#fff;padding:12px 16px 80px;line-height:1.7}

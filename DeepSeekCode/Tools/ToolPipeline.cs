@@ -63,39 +63,85 @@ public class ToolPipeline
     /// <summary>执行管线</summary>
     public async Task<string> ExecuteAsync(ToolCallContext context)
     {
-        // Before 钩子
-        foreach (var filter in _filters)
-        {
-            var allowed = await filter.OnBeforeExecuteAsync(context);
-            if (!allowed)
-            {
-                context.Cancelled = true;
-                return $"工具 '{context.ToolName}' 执行被拦截（{filter.Name}）";
-            }
-        }
+        CancellationTokenRegistration? ctRegistration = null;
+        CancellationTokenSource? timeoutCts = null;
 
-        // 实际执行
-        string result;
         try
         {
-            using (_workspaceService?.EnterWorkspace())
+            // Before 钩子 — 过滤器在这里设置超时等参数
+            foreach (var filter in _filters)
             {
-                result = await _tool.ExecuteAsync(context.Arguments);
+                var allowed = await filter.OnBeforeExecuteAsync(context);
+                if (!allowed)
+                {
+                    context.Cancelled = true;
+                    return $"工具 '{context.ToolName}' 执行被拦截（{filter.Name}）";
+                }
             }
+
+            // 在 Before 钩子之后读取超时配置（因为 TimeoutFilter 在 OnBeforeExecuteAsync 中设置 Bag）
+            if (context.Bag.TryGetValue("TimeoutMs", out var timeoutObj) && timeoutObj is int timeoutMs && timeoutMs > 0)
+            {
+                timeoutCts = new CancellationTokenSource(timeoutMs);
+                if (context.Bag.TryGetValue("___ct___", out var externalCt) && externalCt is CancellationToken ct)
+                {
+                    using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                    ctRegistration = linked.Token.Register(() => context.Cancelled = true);
+                }
+                else
+                {
+                    ctRegistration = timeoutCts.Token.Register(() => context.Cancelled = true);
+                }
+            }
+
+            if (context.Cancelled)
+                return $"工具 '{context.ToolName}' 执行已取消";
+
+            // 实际执行（带统一超时）
+            string result;
+            try
+            {
+                using (_workspaceService?.EnterWorkspace())
+                {
+                    var executeTask = _tool.ExecuteAsync(context.Arguments);
+                    if (timeoutCts != null)
+                    {
+                        var completed = await Task.WhenAny(executeTask, Task.Delay(Timeout.Infinite, timeoutCts.Token));
+                        if (completed != executeTask)
+                            throw new OperationCanceledException("工具执行超时");
+                        result = await executeTask;
+                    }
+                    else
+                    {
+                        result = await executeTask;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                context.Cancelled = true;
+                context.Error = "工具执行超时";
+                result = $"工具 '{context.ToolName}' 执行超时";
+            }
+            catch (Exception ex)
+            {
+                context.Error = ex.Message;
+                result = $"工具执行异常: {ex.Message}";
+            }
+
+            context.EndTime = DateTime.Now;
+
+            // After 钩子
+            foreach (var filter in _filters)
+                await filter.OnAfterExecuteAsync(context, result);
+
+            return result;
         }
-        catch (Exception ex)
+        finally
         {
-            context.Error = ex.Message;
-            result = $"工具执行异常: {ex.Message}";
+            ctRegistration?.Dispose();
+            timeoutCts?.Dispose();
         }
-
-        context.EndTime = DateTime.Now;
-
-        // After 钩子
-        foreach (var filter in _filters)
-            await filter.OnAfterExecuteAsync(context, result);
-
-        return result;
     }
 }
 

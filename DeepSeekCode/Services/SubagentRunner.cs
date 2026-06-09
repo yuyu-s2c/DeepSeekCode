@@ -15,6 +15,7 @@ public class SubagentRunner
     private readonly WorkspaceService _workspaceService;
     private readonly ConfigService _configService;
     private readonly EventBus _eventBus;
+    private readonly Logger _logger;
 
     private const int MaxIterations = 15;
     private const int TimeoutMs = 120000;
@@ -26,7 +27,8 @@ public class SubagentRunner
         PermissionManager permissionManager,
         WorkspaceService workspaceService,
         ConfigService configService,
-        EventBus eventBus)
+        EventBus eventBus,
+        Logger logger)
     {
         _client = client;
         _toolRegistry = toolRegistry;
@@ -34,6 +36,7 @@ public class SubagentRunner
         _workspaceService = workspaceService;
         _configService = configService;
         _eventBus = eventBus;
+        _logger = logger;
     }
 
     /// <summary>
@@ -81,6 +84,7 @@ public class SubagentRunner
         }
         catch (OperationCanceledException)
         {
+            _logger.Warn($"子代理 {taskId} 取消或超时");
             _eventBus.Publish(new SubagentCompletedEvent
             {
                 TaskId = taskId,
@@ -92,6 +96,7 @@ public class SubagentRunner
         }
         catch (Exception ex)
         {
+            _logger.Error(ex, $"子代理 {taskId} 异常");
             _eventBus.Publish(new SubagentCompletedEvent
             {
                 TaskId = taskId,
@@ -250,9 +255,7 @@ You are using the main conversation's model with Thinking enabled (reasoning_eff
                         Arguments = args
                     };
 
-                    var pipeline = BuildSubagentPipeline(tc.Function.Name, args);
-                    var result = await pipeline.ExecuteAsync(context);
-
+                    var result = await ExecuteSubagentToolAsync(tc.Function.Name, tc.Id, args);
                     messages.Add(ChatMessage.CreateToolResult(tc.Id, tc.Function.Name, result));
                 }
 
@@ -270,13 +273,32 @@ You are using the main conversation's model with Thinking enabled (reasoning_eff
         return "子代理达到最大迭代次数，已停止";
     }
 
-    private Tools.ToolPipeline BuildSubagentPipeline(
+    /// <summary>执行子代理工具调用，工具未注册时返回错误而非抛异常</summary>
+    private async Task<string> ExecuteSubagentToolAsync(
         string toolName,
+        string toolCallId,
         Dictionary<string, object?> args)
+    {
+        var pipeline = BuildSubagentPipeline(toolName);
+        if (pipeline == null)
+            return $"错误: 工具 '{toolName}' 未注册";
+
+        var context = new Tools.ToolCallContext
+        {
+            ToolName = toolName,
+            ToolCallId = toolCallId,
+            Arguments = args
+        };
+
+        return await pipeline.ExecuteAsync(context);
+    }
+
+    /// <summary>构建子代理工具管线，工具未注册时返回 null</summary>
+    private Tools.ToolPipeline? BuildSubagentPipeline(string toolName)
     {
         var tool = _toolRegistry.GetTool(toolName);
         if (tool == null)
-            throw new InvalidOperationException($"工具未注册: {toolName}");
+            return null;
 
         var pipeline = new Tools.ToolPipeline(tool, _workspaceService);
 

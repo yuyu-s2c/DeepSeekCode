@@ -1,0 +1,140 @@
+<h2>天蓝色 + 白色 — 两个方向</h2>
+<p class="subtitle">左边暗底天蓝字，右边白底天蓝元素，都是 Claude Code 终端布局</p>
+
+<div class="split">
+
+  <!-- A: 暗底天蓝字 -->
+  <div class="mockup" data-choice="a" onclick="toggleSelect(this)">
+    <div class="mockup-header">A: 深色底 + 天蓝字 — 暗夜蓝天</div>
+    <div class="mockup-body">
+      <div style="background:#0f1720;border-radius:6px;overflow:hidden;font-family:'Cascadia Code','Consolas',monospace;font-size:11px;border:1px solid #1e2d3d;">
+        <div style="background:#131d2a;padding:6px 12px;border-bottom:1px solid #1e3040;display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:#6bb5e0;font-size:10px;">📁 DeepSeek Code — D:\Projects\my-app</span>
+          <span style="color:#3d6078;font-size:10px;">— □ ✕</span>
+        </div>
+        <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-height:220px;">
+          <div style="color:#4a6a80;font-size:10px;padding:2px 0;">DeepSeek Code 已就绪。输入 /help 获取帮助。</div>
+          <div style="display:flex;justify-content:flex-end;">
+            <div style="background:#152535;border:1px solid #1e4a66;border-radius:6px 6px 2px 6px;padding:6px 10px;color:#d8eaf5;max-width:70%;font-size:11px;">
+              ╭─ 你 ──────────────<br>
+              帮我看看这个函数的性能问题
+            </div>
+          </div>
+          <div style="display:flex;">
+            <div style="max-width:82%;">
+              <div style="color:#5cb8e4;font-size:10px;margin-bottom:2px;">╭─ DeepSeek ──────────────</div>
+              <div style="color:#c0d8e8;font-size:11px;line-height:1.6;padding:0 4px;">
+                这段代码有两个问题：<br><br>
+                <span style="color:#5cb8e4;">1.</span> 循环内重复创建对象 → 提取到外部<br>
+                <span style="color:#5cb8e4;">2.</span> 字符串拼接应改用 StringBuilder
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;">
+            <div style="max-width:85%;">
+              <div style="color:#5cb8e4;font-size:10px;margin-bottom:2px;">╭─ DeepSeek · edit_file ────</div>
+              <div style="background:#111d26;border:1px solid #1a3345;border-radius:4px;padding:8px 10px;font-size:10px;line-height:1.5;">
+                <span style="color:#5cc868;">+</span> <span style="color:#c0d8e8;">var sb = new StringBuilder();</span><br>
+                <span style="color:#e06060;">-</span> <span style="color:#c0d8e8;">string result = "";</span><br>
+                <span style="color:#5cc868;">+</span> <span style="color:#c0d8e8;">for(var i=0; i&lt;items.Count; i++)</span><br>
+                <span style="color:#e06060;">-</span> <span style="color:#c0d8e8;">foreach(var item in items)</span>
+              </div>
+            </div>
+          </div>
+          <div style="color:#507088;font-size:10px;padding:2px 10px;border-left:2px solid #1e3a50;">
+            [调用工具: edit_file]<br>
+            [edit_file] src/utils/helper.cs 已修改
+          </div>
+        </div>
+        <div style="border-top:1px solid #1e3040;padding:8px 12px;background:#131d2a;">
+          <div style="display:flex;align-items:flex-end;gap:8px;">
+            <span style="color:#5cb8e4;font-size:11px;">❯</span>
+            <input style="flex:1;background:none;border:none;color:#d8eaf5;font-size:11px;font-family:inherit;padding:2px 0;" placeholder="输入消息...">
+            <button style="background:#1a5580;color:#d8eaf5;border:none;border-radius:3px;padding:4px 12px;font-size:10px;font-family:inherit;">发送</button>
+          </div>
+        </div>
+        <div style="background:#131d2a;border-top:1px solid #1e3040;padding:4px 12px;display:flex;gap:16px;color:#4a6a80;font-size:9px;">
+          <span style="color:#5cb8e4;">⚡ deepseek-v4-pro</span>
+          <span>Token: 1,240</span>
+          <span style="color:#5cc868;">缓存: 68%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B: 白底 + 天蓝元素 -->
+  <div class="mockup" data-choice="b" onclick="toggleSelect(this)">
+    <div class="mockup-header">B: 白底 + 天蓝点缀 — 晴空万里</div>
+    <div class="mockup-body">
+      <div style="background:#ffffff;border-radius:6px;overflow:hidden;font-family:'Cascadia Code','Consolas',monospace;font-size:11px;border:1px solid #d0e4f0;box-shadow:0 0 0 1px rgba(0,0,0,0.04);">
+        <div style="background:#f0f7fb;padding:6px 12px;border-bottom:1px solid #d8e8f4;display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:#3088c8;font-size:10px;">📁 DeepSeek Code — D:\Projects\my-app</span>
+          <span style="color:#90b8d8;font-size:10px;">— □ ✕</span>
+        </div>
+        <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-height:220px;">
+          <div style="color:#90b0c8;font-size:10px;padding:2px 0;">DeepSeek Code 已就绪。输入 /help 获取帮助。</div>
+          <div style="display:flex;justify-content:flex-end;">
+            <div style="background:#e8f3fb;border:1px solid #c0ddf0;border-radius:6px 6px 2px 6px;padding:6px 10px;color:#1a4058;max-width:70%;font-size:11px;">
+              帮我看看这个函数的性能问题
+            </div>
+          </div>
+          <div style="display:flex;">
+            <div style="max-width:82%;">
+              <div style="color:#4ba8e0;font-size:10px;margin-bottom:2px;">DeepSeek</div>
+              <div style="background:#f5fafd;border:1px solid #d8e8f4;border-radius:6px 6px 6px 2px;padding:8px 10px;color:#1e3040;font-size:11px;line-height:1.6;">
+                这段代码有两个问题：<br><br>
+                <span style="color:#3088c8;font-weight:600;">1.</span> 循环内重复创建对象 → 提取到外部<br>
+                <span style="color:#3088c8;font-weight:600;">2.</span> 字符串拼接应改用 StringBuilder
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;">
+            <div style="max-width:85%;">
+              <div style="color:#4ba8e0;font-size:10px;margin-bottom:2px;">DeepSeek · edit_file</div>
+              <div style="background:#1a2a3a;border:1px solid #2a4a6a;border-radius:4px;padding:8px 10px;font-size:10px;line-height:1.5;">
+                <span style="color:#48c060;">+</span> <span style="color:#d0dce0;">var sb = new StringBuilder();</span><br>
+                <span style="color:#e05050;">-</span> <span style="color:#d0dce0;">string result = "";</span><br>
+                <span style="color:#48c060;">+</span> <span style="color:#d0dce0;">for(var i=0; i&lt;items.Count; i++)</span><br>
+                <span style="color:#e05050;">-</span> <span style="color:#d0dce0;">foreach(var item in items)</span>
+              </div>
+            </div>
+          </div>
+          <div style="color:#8ab0cc;font-size:10px;padding:2px 10px;border-left:2px solid #c8e0f0;">
+            [调用工具: edit_file]<br>
+            [edit_file] src/utils/helper.cs 已修改
+          </div>
+        </div>
+        <div style="border-top:1px solid #d8e8f4;padding:8px 12px;background:#f0f7fb;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:#3088c8;font-size:13px;">❯</span>
+            <input style="flex:1;background:#fff;border:1px solid #c8ddf0;border-radius:4px;color:#1e3040;font-size:11px;font-family:inherit;padding:6px 10px;" placeholder="输入消息...">
+            <button style="background:#38a0e0;color:#fff;border:none;border-radius:4px;padding:6px 14px;font-size:10px;font-family:inherit;">发送</button>
+          </div>
+        </div>
+        <div style="background:#f0f7fb;border-top:1px solid #d8e8f4;padding:4px 12px;display:flex;gap:16px;color:#80a8c0;font-size:9px;">
+          <span style="color:#3088c8;font-weight:500;">⚡ deepseek-v4-pro</span>
+          <span>Token: 1,240</span>
+          <span style="color:#38a848;">缓存: 68%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="options" style="margin-top:24px;">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>深底 + 天蓝字</h3>
+      <p>暗色终端氛围，天蓝作为前景主体色。代码区深底对比度最高，适合长时间编码。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>白底 + 天蓝点缀</h3>
+      <p>主背景纯白，用天蓝做按钮、链接、分隔线的强调色。极简干净，类似 iTerm2 白天模式。</p>
+    </div>
+  </div>
+</div>
