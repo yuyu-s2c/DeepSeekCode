@@ -52,7 +52,7 @@ As you answer the user's questions, you can use the following context:
 Codebase and user instructions are shown below. Be sure to adhere to these instructions.
 IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
 
-Contents of C:\Users\20413\.claude\CLAUDE.md (user's private global instructions for all projects):
+Contents of %USERPROFILE%\.claude\CLAUDE.md (user's private global instructions for all projects):
 ...（完整 CLAUDE.md 内容）...
 
 # currentDate
@@ -124,7 +124,7 @@ and verified, state it plainly without hedging.
 ```
 # Memory
 
-You have a persistent file-based memory at `C:\Users\20413\.claude\projects\...`
+You have a persistent file-based memory at `%USERPROFILE%\.claude\projects\...`
 Each memory is one file holding one fact, with frontmatter:
 
 ```markdown
