@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>DeepSeekCode.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- 单文件发布：dotnet publish -p:PublishSingleFile=true -->
